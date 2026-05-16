@@ -1,39 +1,34 @@
 #!/bin/bash
+set -e # Hata oluşursa hemen dur ki nerede patladığımızı bilelim!
 
-echo "==> Wind OS Özellikleri Korunarak Zorunlu ISO Üretimi Başlatıldı..."
+echo "==> Wind OS Sıkıntıları Kıran Nihai Derleme Başlatıldı..."
 
-# 1. Eski kalıntıları temizle
 rm -rf isodir windos_boot_layer
 rm -f *.o kernel.bin windos.iso
 
-# 2. Klasör yapısını kur
 mkdir -p windos_boot_layer/boot/grub
 
-# 3. Önyükleyiciyi derle
 nasm -f elf32 boot.asm -o boot.o
 
-# 4. TÜM YAPAY ZEKA VE SÜRÜCÜ ODALARI (%100 KORUNDU)
-echo "==> Yapay zeka odaları ve sürücüler derleniyor..."
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c kernel.c -o kernel.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c gui.c -o gui.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c exe_subsystem.c -o exe_subsystem.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c ai_subsystem.c -o ai_subsystem.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c mouse.c -o mouse.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c keyboard.c -o keyboard.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c wind_subsystem.c -o wind_subsystem.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c screen.c -o screen.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c idt.c -o idt.o || true
-gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c deb_subsystem.c -o deb_subsystem.o || true
+echo "==> Çekirdek odaları ve AI modülleri derleniyor..."
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c gui.c -o gui.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c exe_subsystem.c -o exe_subsystem.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c ai_subsystem.c -o ai_subsystem.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c mouse.c -o mouse.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c keyboard.c -o keyboard.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c wind_subsystem.c -o wind_subsystem.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c screen.c -o screen.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c idt.c -o idt.o
+gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c deb_subsystem.c -o deb_subsystem.o
 
-# 5. Linker Bağlantısı (boot.o her zaman en başta)
+echo "==> Kurşun geçirmez linker bağlantısı yapılıyor..."
 gcc -m32 -T linker.ld -nostdlib -no-pie -Wl,-z,noexecstack -o kernel.bin \
     boot.o kernel.o gui.o exe_subsystem.o ai_subsystem.o \
-    mouse.o keyboard.o wind_subsystem.o screen.o idt.o deb_subsystem.o || true
+    mouse.o keyboard.o wind_subsystem.o screen.o idt.o deb_subsystem.o
 
-# 6. Çekirdeği Taşı
-cp kernel.bin windos_boot_layer/boot/kernel.bin || true
+cp kernel.bin windos_boot_layer/boot/kernel.bin
 
-# 7. GRUB Menüsünü Enjekte Et
 cat << 'EOF' > windos_boot_layer/boot/grub/grub.cfg
 set timeout=0
 set default=0
@@ -43,8 +38,5 @@ menuentry "Wind OS - Full AI Core" {
 }
 EOF
 
-# 8. ISO'YU NE OLURSA OLSUN ZORLA ÜRET
-echo "==> ISO Paketi mühürleniyor..."
 grub-mkrescue -o windos.iso windos_boot_layer
-
-echo "==> İşlem bitti! İçi dolu, gerçek ISO basıldı."
+echo "==> BÜTÜN ARALIKLAR TAMAM! Gerçek ve çalışan ISO başarıyla mühürlendi."
