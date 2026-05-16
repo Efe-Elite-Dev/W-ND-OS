@@ -1,48 +1,43 @@
-bits 32
-
-MULTIBOOT_PAGE_ALIGN    equ 1 << 0
-MULTIBOOT_MEMORY_INFO   equ 1 << 1
-MULTIBOOT_VIDEO_MODE    equ 1 << 2
-
-MULTIBOOT_HEADER_MAGIC  equ 0x1BADB002
-MULTIBOOT_HEADER_FLAGS  equ MULTIBOOT_PAGE_ALIGN | MULTIBOOT_MEMORY_INFO | MULTIBOOT_VIDEO_MODE
-MULTIBOOT_CHECKSUM      equ -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
+; Wind OS Bootloader - Sky OS Engine Compatible
+MBOOT_PAGE_ALIGN    equ 1 << 0
+MBOOT_MEMORY_INFO   equ 1 << 1
+MBOOT_GRAPHICS_MODE equ 1 << 2
+MBOOT_FLAGS         equ MBOOT_PAGE_ALIGN | MBOOT_MEMORY_INFO | MBOOT_GRAPHICS_MODE
+MBOOT_MAGIC         equ 0x1BADB002
+MBOOT_CHECKSUM      equ -(MBOOT_MAGIC + MBOOT_FLAGS)
 
 section .multiboot
 align 4
-    dd MULTIBOOT_HEADER_MAGIC
-    dd MULTIBOOT_HEADER_FLAGS
-    dd MULTIBOOT_CHECKSUM
+    dd MBOOT_MAGIC
+    dd MBOOT_FLAGS
+    dd MBOOT_CHECKSUM
     
-    ; Multiboot Grafik Alanı Sabitleri (Zorunlu Boşluklar)
+    ; VBE Grafik Modu Gereksinimleri (800x600x32)
     dd 0
     dd 0
     dd 0
     dd 0
     dd 0
-    
-    ; Grafik Çözünürlüğü Ayarları (0 = Lineer Ekran Kartı Belleği)
-    dd 0        
-    dd 800      
-    dd 600      
-    dd 32       
-
-section .bootstrap_stack, nobits
-align 16
-stack_bottom:
-    resb 16384  ; 16 KB temiz yığın
-stack_top:
+    dd 800
+    dd 600
+    dd 32
 
 section .text
-global _start
+global start
 extern kernel_main
 
-_start:
-    mov esp, stack_top
-    push ebx    
-    cli         
-    call kernel_main
-
-.hang:
+start:
+    cli                         ; Kesmeleri kapat
+    mov esp, stack_space        ; Stack göstergesini ayarla
+    
+    push ebx                    ; Multiboot info yapısının adresini stack'e it (mboot parametresi)
+    call kernel_main            ; C çekirdeğine atla
+    
+.halt:
     hlt
-    jmp .hang
+    jmp .halt
+
+section .bss
+align 16
+stack_space:
+    resb 8192                   ; 8KB Güvenli Stack Alanı
