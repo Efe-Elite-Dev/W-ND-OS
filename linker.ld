@@ -1,17 +1,65 @@
-ENTRY(_start)
+ENTRY(start)
 
 SECTIONS
 {
-    /* Çekirdek tam 1MB (0x100000) adresine oturacak */
-    . = 0x100000;
+    /* Çekirdek 1 MB (1 Megabyte) adresinden başlar */
+    . = 1M;
 
+    /* Multiboot başlığı en başta olmalı ki GRUB tanısın */
     .text BLOCK(4K) : ALIGN(4K)
     {
-        KEEP(*(.multiboot)) /* Derleyicinin başlığı silmesini veya kaydırmasını engeller */
+        *(.multiboot)
         *(.text)
     }
 
-    .rodata BLOCK(4K) : ALIGN(4K) { *(.rodata*) }
-    .data BLOCK(4K)   : ALIGN(4K) { *(.data)   }
-    .bss BLOCK(4K)    : ALIGN(4K) { *(.bss)    }
+    /* Salt okunur veriler */
+    .rodata BLOCK(4K) : ALIGN(4K)
+    {
+        *(.rodata)
+    }
+
+    /* Başlangıçta değer atanmış veriler */
+    .data BLOCK(4K) : ALIGN(4K)
+    {
+        *(.data)
+    }
+
+    /* Başlangıçta sıfır olan veriler (BSS) */
+    .bss BLOCK(4K) : ALIGN(4K)
+    {
+        *(COMMON)
+        *(.bss)
+    }
+}ENTRY(start)
+
+SECTIONS
+{
+    /* Çekirdek 1 MB (1 Megabyte) adresinden başlar */
+    . = 1M;
+
+    /* Multiboot başlığı en başta olmalı ki GRUB tanısın */
+    .text BLOCK(4K) : ALIGN(4K)
+    {
+        *(.multiboot)
+        *(.text)
+    }
+
+    /* Salt okunur veriler */
+    .rodata BLOCK(4K) : ALIGN(4K)
+    {
+        *(.rodata)
+    }
+
+    /* Başlangıçta değer atanmış veriler */
+    .data BLOCK(4K) : ALIGN(4K)
+    {
+        *(.data)
+    }
+
+    /* Başlangıçta sıfır olan veriler (BSS) */
+    .bss BLOCK(4K) : ALIGN(4K)
+    {
+        *(COMMON)
+        *(.bss)
+    }
 }
