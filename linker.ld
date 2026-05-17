@@ -1,31 +1,27 @@
-ENTRY(start)
+ENTRY(_start)
+OUTPUT_FORMAT(elf32-i386)
 
 SECTIONS
 {
-    /* Çekirdek 1 MB (1 Megabyte) adresinden başlar */
-    . = 1M;
+    . = 0x100000; /* Çekirdek 1MB noktasına yüklenecek */
 
-    /* Multiboot başlığı en başta olmalı ki GRUB tanısın */
-    .text BLOCK(4K) : ALIGN(4K)
+    .text : ALIGN(4K)
     {
-        *(.multiboot)
+        *(.multiboot) /* Başlık en başta olmak zorunda */
         *(.text)
     }
 
-    /* Salt okunur veriler */
-    .rodata BLOCK(4K) : ALIGN(4K)
+    .rodata : ALIGN(4K)
     {
-        *(.rodata)
+        *(.rodata*)
     }
 
-    /* Başlangıçta değer atanmış veriler */
-    .data BLOCK(4K) : ALIGN(4K)
+    .data : ALIGN(4K)
     {
         *(.data)
     }
 
-    /* Başlangıçta sıfır olan veriler (BSS) */
-    .bss BLOCK(4K) : ALIGN(4K)
+    .bss : ALIGN(4K)
     {
         *(COMMON)
         *(.bss)
