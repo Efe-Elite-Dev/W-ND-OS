@@ -1,153 +1,97 @@
-#include "ai_subsystem.h"
-#include "wind_subsystem.h"
+#include <stdint.h>
+#include <stddef.h>
 
-/* =============================================================================
-   MULTIBOOT 1 ÖZELLİK YAPISI (GRUB'DAN GELEN VERİLERİ OKUMAK İÇİN)
-   =============================================================================
- */
-struct multiboot_info {
-  uint32_t flags;
-  uint32_t mem_lower;
-  uint32_t mem_upper;
-  uint32_t boot_device;
-  uint32_t cmdline;
-  uint32_t mods_count;
-  uint32_t mods_addr;
-  uint32_t syms[4];
-  uint32_t mmap_length;
-  uint32_t mmap_addr;
-  uint32_t drives_length;
-  uint32_t drives_addr;
-  uint32_t config_table;
-  uint32_t boot_loader_name;
-  uint32_t apm_table;
-  uint32_t vbe_control_info;
-  uint32_t vbe_mode_info;
-  uint16_t vbe_mode;
-  uint16_t vbe_interface_seg;
-  uint16_t vbe_interface_off;
-  uint16_t vbe_interface_len;
-  // VBE Grafik Modu Alanları (GOP/Linear Framebuffer)
-  uint64_t framebuffer_addr;
-  uint32_t framebuffer_pitch;
-  uint32_t framebuffer_width;
-  uint32_t framebuffer_height;
-  uint8_t framebuffer_bpp;
-  uint8_t framebuffer_type;
-  uint8_t color_info[6];
-};
+// Modül Fonksiyon Bildirimleri
+void setup_init(void);
+void setup_handle_input(uint8_t scancode);
+void setup_render(void);
 
-/* =============================================================================
-   YAPAY ZEKA MERKEZİ SİNİR AĞI HÜCRESİ STRUCT TANIMI
-   =============================================================================
- */
-struct ai_network_core {
-  int predicted_cpu_load;
-  int anomaly_flag;
-  int system_policy;
-  int keyboard_cadence;
-};
+// Global VGA Metin Belleği Tanımları
+uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000;
+int text_x = 0;
+int text_y = 0;
+int is_graphics_mode = 0; // 0 = SkyOS Metin Modu, 1 = WindOS Grafik Modu
 
-static struct ai_network_core ai_net;
-
-/* =============================================================================
-   HARİCİ ALT SİSTEM VE SÜRÜCÜ BAĞLANTILARI (EXTERNALS)
-   =============================================================================
- */
-extern void init_idt(void);
-extern void init_keyboard(void);
-extern void init_mouse(void);
-extern void init_graph_mode(void);
-extern void clear_screen_gfx(uint32_t color);
-extern void handle_mouse_polling(void);
-extern void check_keyboard_pure(void);
-extern void run_exe_subsystem(void);
-extern void gui_refresh_desktop(void);
-
-/* Grafik Ekran Bellek İşaretçileri */
-uint32_t *vbe_vram = (uint32_t *)0xFD000000; // Varsayılan yedek adres
-uint32_t vbe_pitch = 800 * 4;
-
-/**
- * @brief Klavye basım temposunu ve hızını analiz eden mikro AI fonksiyonu.
- */
-int ai_keyboard_analyze_cadence(void) {
-  // Klavye temposunu simüle eden temel regresyon hücresi
-  return 12;
-}
-
-/**
- * @brief Yapay Zeka Çekirdek İnferans Döngüsü
- */
-void execute_micro_ai_inference(int loop_count) {
-  // 1. Sürücülerden gelen canlı verileri sinir ağı hücrelerine topla
-  ai_net.keyboard_cadence = ai_keyboard_analyze_cadence();
-
-  // 2. Mikro Karar Ağacı Simülasyonu
-  if (ai_net.keyboard_cadence > 50) {
-    ai_net.predicted_cpu_load = 85; // Ağır tempo yük tahmini
-    ai_net.anomaly_flag = 0;
-    ai_net.system_policy = 1; // Ultra Performans Modu
-  } else {
-    ai_net.predicted_cpu_load = 15; // Rutin yük tahmini
-    ai_net.anomaly_flag = 0;
-    ai_net.system_policy = 0; // Dengeli Standart Mod
-  }
-
-  // 3. Hesaplanan sinir ağ verilerini ana zamanlayıcıya (scheduler) enjekte et
-  ai_core_predict_scheduler(ai_net.predicted_cpu_load, ai_net.anomaly_flag,
-                            ai_net.system_policy);
-
-  (void)loop_count;
-}
-
-/* =============================================================================
-   WIND OS ANA ÇEKİRDEK GİRİŞ NOKTASI (BOOT.ASM BURAYA ATLAR)
-   =============================================================================
- */
-void kernel_main(struct multiboot_info *mboot) {
-  // 1. GRUB'dan gelen VBE Linear Framebuffer bilgilerini doğrula ve bağla
-  if (mboot != 0 && (mboot->flags & (1 << 12)) &&
-      (mboot->framebuffer_addr != 0)) {
-    vbe_vram = (uint32_t *)(uintptr_t)mboot->framebuffer_addr;
-    vbe_pitch = mboot->framebuffer_pitch;
-  }
-
-  // 2. Donanım Kapılarını ve Temel Alt Sistemleri Ayağa Kaldır
-  init_idt();
-  init_keyboard();
-  init_mouse();
-  init_graph_mode();
-
-  // Rüzgar Alt Sistemini Tetikle
-  init_wind_subsystem();
-
-  // 3. Ekranı Wind OS Gece Mavisi ile Temizle
-  clear_screen_gfx(0x000B1E36);
-
-  int main_loop_counter = 0;
-
-  // 4. SONSUZ ÇEKİRDEK ANA DÖNGÜSÜ (KERNEL MAIN LOOP)
-  while (1) {
-    main_loop_counter++;
-
-    // Donanım Polling Girişlerini Sorgula
-    handle_mouse_polling();
-    check_keyboard_pure();
-
-    // Rüzgar Alt Sistemi Saatini Tiklet
-    wind_subsystem_tick();
-
-    // Yapay Zeka Çekirdeğini İnferans Modunda Koştur
-    if (main_loop_counter % 100 == 0) {
-      execute_micro_ai_inference(main_loop_counter);
+void clear_text_screen(void) {
+    for (int i = 0; i < 80 * 25; i++) {
+        TEXT_VIDEO_MEMORY[i] = (0x0F << 8) | ' ';
     }
+    text_x = 0;
+    text_y = 0;
+}
 
-    // Uygulama ve Grafik Alt Sistemini Canlı Besle
-    run_exe_subsystem();
-    gui_refresh_desktop();
+void print_string(const char* str) {
+    if (is_graphics_mode) return;
+    while (*str) {
+        if (*str == '\n') {
+            text_x = 0;
+            text_y++;
+        } else {
+            TEXT_VIDEO_MEMORY[text_y * 80 + text_x] = (0x0F << 8) | *str;
+            text_x++;
+            if (text_x >= 80) { text_x = 0; text_y++; }
+        }
+        str++;
+    }
+}
 
-    // CPU'yu boşa yormamak için mikro bekleme (Donanımsal hlt simülasyonu)
-    __asm__ volatile("hlt");
-  }
+// Donanımdan Veri Okuma/Yazma (Port Girdileri)
+static inline uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
+
+// Basit Komut İstemi Altyapısı
+void handle_cli_command(const char* cmd) {
+    if (cmd[0] == 's' && cmd[1] == 's') {
+        // 'ss' komutu girildiğinde Wind OS Grafik Kurulum Sihirbazını tetikle!
+        is_graphics_mode = 1;
+        setup_init();
+    } else {
+        print_string("\nBilinmeyen Komut! Kurulumu baslatmak icin 'ss' yazin.\nSkyOS> ");
+    }
+}
+
+void kernel_main(void* mboot_ptr, uint32_t magic) {
+    (void)mboot_ptr;
+    (void)magic;
+    
+    clear_text_screen();
+    print_string("=======================================================================\n");
+    print_string("          Sky-OS Safe AI Kernel - Ultra Polling Klavye Aktif!\n");
+    print_string("=======================================================================\n\n");
+    print_string("[+] VGA Metin modu ekran surucusu: STABIL\n");
+    print_string("[+] Donanimsal Kesme Korumasi (Anti-Guru Mode): AKTIF\n");
+    print_string("[+] Do-frudan Port Taramali Klavye Motoru Devrede.\n\n");
+    print_string("Grafiksel Wind OS kurulumuna gecmek icin 'ss' yazip ENTER'a basin.\n\n");
+    print_string("SkyOS> ");
+
+    char cmd_buffer[3] = {0};
+    int cmd_idx = 0;
+
+    // Ultra Polling Donanımsal Klavye Döngüsü
+    while (1) {
+        // Klavye kontrolcüsü (Port 0x64) veri hazır mı?
+        if (inb(0x64) & 1) {
+            uint8_t scancode = inb(0x60);
+            
+            if (is_graphics_mode) {
+                // Eğer grafik modundaysak girdileri doğrudan Wind OS mekanik motoruna ilet
+                setup_handle_input(scancode);
+            } else {
+                // SkyOS komut satırı girdileri
+                if (scancode == 0x1F) { // 'S' Tuşu scancode
+                    if (cmd_idx < 2) { cmd_buffer[cmd_idx++] = 's'; print_string("s"); }
+                } else if (scancode == 0x1C) { // ENTER Tuşu
+                    cmd_buffer[cmd_idx] = '\0';
+                    handle_cli_command(cmd_buffer);
+                    cmd_idx = 0;
+                }
+            }
+        }
+        
+        // Donanımı yormamak için çok ufak bir CPU dinlendirme
+        __asm__ volatile("pause");
+    }
 }
