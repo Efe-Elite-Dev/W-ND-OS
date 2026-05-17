@@ -8,17 +8,24 @@ static int mouse_x_position = 400;
 static int mouse_y_position = 300;
 
 /**
+ * @brief Fare sürücüsünü ve ekran üzerindeki başlangıç koordinatlarını hazırlar.
+ */
+void init_mouse(void) {
+    mouse_x_position = 400;
+    mouse_y_position = 300;
+    
+    // Fare donanımını etkinleştirmek için (PS/2) komut dizilimleri ileride buraya genişletilebilir
+}
+
+/**
  * @brief Fare hareket verilerini port üzerinden sorgulayarak (polling) yakalar.
  */
 void handle_mouse_polling(void) {
-    // Durum portunu oku, veri var mı kontrol et
     uint8_t status = inb(MOUSE_STATUS_PORT);
     
     if (status & 0x01) {
-        // Veri portundan delta bilgisini çek
         int8_t delta_x = (int8_t)inb(MOUSE_DATA_PORT);
         
-        // Eksen pozisyonlarını güncelle ve ekran sınırlarında tut
         mouse_x_position += delta_x;
         if (mouse_x_position < 0) mouse_x_position = 0;
         if (mouse_x_position > 799) mouse_x_position = 799;
