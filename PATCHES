@@ -1,1 +1,16 @@
+# =============================================================================
+# Wind OS - Virtual Machine & UEFI Dynamic Patch Configuration File
+# =============================================================================
 
+[TARGET_PATCH_INFO]
+PATCH_VERSION=1.0.0_VM_STABLE
+TARGET_SYSTEM=Sky_OS_Engine_Compatible
+
+[UEFI_PATH_MAP]
+EFI_TARGET_DIR=isodir/EFI/BOOT
+IA32_BOOT_FILE=BOOTIA32.EFI
+X64_BOOT_FILE=BOOTX64.EFI
+
+[GRUB_PATCH_FLAGS]
+FORCE_EFI_GOP_PATCH=1
+FORCE_VIDEO_BUFF_PATCH=1
