@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-/* GRUB'ın kernel.c'ye yolladığı Multiboot Donanım Yapısı */
+/* GRUB'ın kernel.c'ye yolladığı Orijinal Multiboot Donanım Yapısı (%100 Korundu) */
 struct multiboot_info {
     uint32_t flags;
     uint32_t mem_lower;
@@ -37,6 +37,9 @@ struct multiboot_info {
     uint8_t  framebuffer_type;
 };
 
+/* Ana Giriş Noktası Tanımı (Linker ve Derleyici Uyumu İçin) */
+void kernel_main(void* mboot_ptr);
+
 /* Donanım Port Köprüleri */
 void outb(unsigned short port, unsigned char val);
 unsigned char inb(unsigned short port);
@@ -45,6 +48,9 @@ unsigned char inb(unsigned short port);
 void init_graph_mode(void);
 void draw_pixel_pure(int x, int y, uint32_t color);
 void clear_screen_gfx(uint32_t color);
+void swap_buffers(void);
+
+/* KRİTİK DÜZELTME: exe_subsystem.c'nin aradığı 5 parametreli nihai standart! */
 void draw_window_pure(int x, int y, int width, int height, uint32_t border_color);
 
 /* Altsistemler */
@@ -57,9 +63,9 @@ void check_keyboard_pure(void);
 void gui_refresh_desktop(void);
 void run_exe_subsystem(void);
 
-/* AI Modülleri */
+/* AI Modülleri - C Dosyalarıyla Tam Senkronize Parametreler */
 int ai_mouse_analyze_stress(void);
 int ai_keyboard_analyze_cadence(void);
-int ai_core_predict_scheduler(int stress, int cadence, int loops);
+void ai_core_predict_scheduler(int predicted_load, int anomaly_flag, int policy);
 
 #endif
