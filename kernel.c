@@ -32,7 +32,7 @@ typedef struct {
     int dynamic_quantum_ms;   // Görev zamanlayıcı kuantum süresi (Mikrosaniye)
 } AI_Kernel_Core_Network;
 
-AI_Kernel_Core_Network ai_net;
+static AI_Kernel_Core_Network ai_net;
 
 /* AI Destekli Dinamik Hafıza Blok Yönetimi (Sanal Sayfalama) */
 uint8_t ai_memory_bitmap[AI_MAX_MEMORY_PAGES];
@@ -103,7 +103,10 @@ static inline void apply_cellular_ai_optimizations(void) {
 }
 
 /* Wind OS Çekirdek Giriş Noktası */
-void kernel_main(struct multiboot_info* mboot) {
+void kernel_main(void* mboot_ptr) {
+    // KRİTİK UYUM: void* olarak gelen pointer'ı güvenli bir şekilde struct tipine cast ediyoruz
+    struct multiboot_info* mboot = (struct multiboot_info*)mboot_ptr;
+
     // 1. GRUB VBE Donanımsal Grafik Bilgilerini Al ve Hafızaya Çak
     if (mboot != 0 && (mboot->flags & (1 << 12)) && (mboot->framebuffer_addr != 0)) {
         vbe_vram = (uint32_t*)(uintptr_t)mboot->framebuffer_addr;
