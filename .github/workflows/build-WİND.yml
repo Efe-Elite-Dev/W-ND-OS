@@ -1,4 +1,4 @@
-name: 🚀 WIND OS MEGA BUILD & BOOT TEST ENGINE
+name: WIND OS MEGA BUILD AND BOOT TEST ENGINE
 
 on:
   push:
@@ -9,61 +9,60 @@ on:
 
 jobs:
   build_and_test:
-    runs-of: ubuntu-latest
+    runs-on: ubuntu-latest
 
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Node.js 20 deprecation uyarısını ezer
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
     steps:
-    - name: 📥 Kaynak Kodları Çekiliyor
+    - name: Checkout Source Code
       uses: actions/checkout@v4
 
-    - name: 🛠️ Gerekli Derleme ve Paketleme Araçları Kuruluyor
+    - name: Install Build and Packaging Tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y nasm gcc-multilib build-essential xorriso grub-pc-bin qemu-system-x86 xvfb Imagemagick
+        sudo apt-get install -y nasm gcc-multilib build-essential xorriso grub-pc-bin qemu-system-x86 xvfb imagemagick bc
 
-    - name: 🔐 Derleme Betiği Yetkilendiriliyor
+    - name: Grant Execute Permission to Build Script
       run: chmod +x build.sh
 
-    - name: 🏗️ Çekirdek ve Tüm Alt Sistemler Derleniyor (Build)
+    - name: Run Build Script
       run: ./build.sh
 
-    - name: 🖥️ QEMU Sanal Ekran Testi ve Siyah Ekran Analizi
+    - name: QEMU Virtual Display Test and Black Screen Analysis
       run: |
-        echo "[+] Sanal ekran (Xvfb) arka planda başlatılıyor..."
+        echo "[+] Starting virtual frame buffer (Xvfb) in the background..."
         Xvfb :99 -screen 0 1024x768x24 &
         export DISPLAY=:99
         sleep 2
         
-        echo "[+] Sky Core OS, QEMU üzerinde boot ediliyor (Süre: 5 saniye)..."
+        echo "[+] Booting Sky Core OS on QEMU (Duration: 5 seconds)..."
         qemu-system-x86_64 -cdrom os_image.iso -m 512M -vga std &
         QEMU_PID=$!
         sleep 5
         
-        echo "[+] Ekranın canlı görüntüsü yakalanıyor (Screenshot)..."
+        echo "[+] Capturing live screenshot..."
         import -window root screenshot.png
         
-        echo "[+] QEMU güvenli şekilde kapatılıyor..."
+        echo "[+] Terminating QEMU safely..."
         kill -15 $QEMU_PID
         
-        echo "[🔍] Siyah Ekran Analiz Motoru Çalışıyor..."
+        echo "[🔍] Running Screen Brightness Analysis..."
         BRIGHTNESS=$(convert screenshot.png -colorspace gray -format "%[fx:mean]" info:)
-        echo "[+] Ekran Parlaklık Oranı: $BRIGHTNESS"
+        echo "[+] Display Brightness Ratio: $BRIGHTNESS"
         
-        # Eğer parlaklık 0 ise yani simsiyahsa hata ver ve durdur
         if [ $(echo "$BRIGHTNESS == 0.0" | bc -l) -eq 1 ]; then
           echo "======================================================================"
-          echo "❌ HATA: Ekran simsiyah! Grafik motoru pikselleri basamadı."
+          echo "❌ ERROR: Screen is completely black! Graphics engine failed to render."
           echo "======================================================================"
           exit 1
         else
           echo "======================================================================"
-          echo "✅ BAŞARILI: Ekran simsiyah değil! Grafik motoru pikselleri bastı."
+          echo "✅ SUCCESS: Screen is not black! Piksels rendered successfully."
           echo "======================================================================"
         fi
 
-    - name: 📦 Çıktılar Paketlemesi (Artifact Upload)
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SkyCoreOS-Boot-Result
