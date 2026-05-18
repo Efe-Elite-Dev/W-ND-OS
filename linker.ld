@@ -1,27 +1,27 @@
 ENTRY(_start)
-OUTPUT_FORMAT(elf32-i386)
 
 SECTIONS
 {
-    . = 0x100000; /* Çekirdek 1MB noktasına yüklenecek */
+    /* Çekirdeği 1MB noktasına mühürlüyoruz (Standart Multiboot) */
+    . = 1M;
 
-    .text : ALIGN(4K)
+    .text BLOCK(4K) : ALIGN(4K)
     {
-        *(.multiboot) /* Başlık en başta olmak zorunda */
+        *(.multiboot) /* Önce multiboot header gelmek ZORUNDA */
         *(.text)
     }
 
-    .rodata : ALIGN(4K)
+    .rodata BLOCK(4K) : ALIGN(4K)
     {
-        *(.rodata*)
+        *(.rodata)
     }
 
-    .data : ALIGN(4K)
+    .data BLOCK(4K) : ALIGN(4K)
     {
         *(.data)
     }
 
-    .bss : ALIGN(4K)
+    .bss BLOCK(4K) : ALIGN(4K)
     {
         *(COMMON)
         *(.bss)
