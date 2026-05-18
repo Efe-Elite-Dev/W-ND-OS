@@ -1,4 +1,4 @@
-name: Wind OS ISO Build Engine
+name: 🚀 WIND OS MEGA BUILD & BOOT TEST ENGINE
 
 on:
   push:
@@ -7,55 +7,72 @@ on:
     branches: [ "main", "master" ]
 
 jobs:
-  compile-kernel-iso:
-    name: "x86 Kernel & ISO Compilation"
+  build_and_test:
     runs-on: ubuntu-latest
 
     steps:
-    - name: "1. Kaynak Kodları ve Assetleri Çek (Checkout)"
+    - name: 📥 Depoyu Klonla
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 # Tüm commit geçmişini ve büyük verileri güvenle çekmek için
 
-    - name: "2. Linux Çapraz Derleme Araçlarını Kur (Toolchain)"
+    - name: 🛠️ Gerekli Derleme ve Test Bağımlılıklarını Kur
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          nasm \
-          gcc-multilib \
-          build-essential \
-          grub-pc-bin \
-          grub-common \
-          xorriso \
-          mtools \
-          libisoburn1
+        # Derleme araçları (nasm, gcc vb.) ve ISO oluşturucular
+        sudo apt-get install -y nasm xorriso grub-pc-bin gcc-multilib build-essential
+        # Arka planda sanal boot testi için QEMU ve Sanal Ekran (Xvfb + ImageMagick)
+        sudo apt-get install -y qemu-system-x86 xvfb imagemagick
 
-    - name: "3. Büyük Veri ve Paket Kapasite Sınırlarını Esnet (2 GB İzni)"
-      run: |
-        echo "[+] GitHub Runner disk ve bellek optimizasyonu yapılıyor..."
-        df -h
-        # Büyük paketlerin işlenmesi esnasında çıkabilecek IO tıkanıklıklarını önleme ayarı
-        sudo sysctl -w vm.dirty_background_ratio=5
-        sudo sysctl -w vm.dirty_ratio=10
+    - name: 🔑 Çalıştırma İzinlerini Ayarla
+      run: chmod +x build.sh
 
-    - name: "4. Mega Derleme Motorunu Çalıştır (build.sh)"
-      run: |
-        chmod +x build.sh
-        ./build.sh
+    - name: 🏗️ Sistemi Sıfırdan Derle (ISO Üret)
+      run: ./build.sh
 
-    - name: "5. Derleme Çıktılarını ve ISO Bütünlüğünü Doğrula"
+    - name: 🖥️ Canlı Boot Testi ve Siyah Ekran Denetimi
       run: |
-        if [ ! -f "windos.iso" ]; then
-          echo "❌ HATA: Derleme motoru aşamaları tamamlayamadı, windos.iso kayıp!"
+        echo "[+] Sanal ekran (Xvfb) arka planda başlatılıyor..."
+        Xvfb :99 -screen 0 1024x768x24 &
+        export DISPLAY=:99
+        sleep 2
+
+        echo "[+] Sky Core OS, QEMU üzerinde boot ediliyor (Süre: 5 saniye)..."
+        # QEMU'yu sanal ekrana bağlayıp ISO'yu başlatıyoruz
+        qemu-system-x86_64 -cdrom os_image.iso -m 256M -vga std &
+        QEMU_PID=$!
+        
+        # Çekirdeğin yüklenmesi ve mor UI'ın ekrana basılması için süre tanıyoruz
+        sleep 5
+
+        echo "[+] Ekranın canlı görüntüsü yakalanıyor (Screenshot)..."
+        import -window root screenshot.png
+        
+        echo "[+] QEMU güvenli şekilde kapatılıyor..."
+        kill $QEMU_PID
+
+        echo "[🔍] Siyah Ekran Analiz Motoru Çalışıyor..."
+        # ImageMagick ile ekrandaki piksellerin ortalama renk değerini alıyoruz
+        # Eğer ekran tamamen siyahsa bu değer 0 veya 0'a aşırı yakın olacaktır.
+        MEAN_COLOR=$(convert screenshot.png -colorspace Gray -format "%[fx:mean]" info:)
+        echo "[+] Ekran Parlaklık Oranı (0 = Tam Siyah, 1 = Tam Beyaz): $MEAN_COLOR"
+
+        # Eşik değeri (Threshold) koyuyoruz. Tam siyahlık 0.00'dır.
+        # Bizim mor arka plan renk içerdiği için bu değer 0.03'ten büyük olmalıdır.
+        if (( $(echo "$MEAN_COLOR < 0.02" | bc -l) )); then
+          echo "======================================================================"
+          echo "❌ HATA: SİYAH EKRAN ALGILANDI! Sistem grafik moduna geçemedi veya çöktü."
+          echo "======================================================================"
           exit 1
+        else
+          echo "======================================================================"
+          echo "✅ BAŞARILI: Ekran simsiyah değil! Grafik motoru pikselleri bastı."
+          echo "======================================================================"
         fi
-        echo "✅ BAŞARILI: ISO başarıyla doğrulandı."
-        ls -lh windos.iso
 
-    - name: "6. Üretilen ISO Dosyasını Dağıtıma Çıkar (Artifact Upload)"
-      uses: actions/upload-artifact@v4
+    - name: 📦 Ekran Görüntüsünü ve ISO'yu Kaydet
+      if: always() # Test patlasa bile ekran görüntüsünü indirip görebilmen için her zaman çalışır
+      uses: actions/artifacts@v4
       with:
-        name: WindOS-v1.5-Vortex-ISO
-        path: windos.iso
-        if-no-files-found: error
-        retention-days: 7 # GitHub depolama kotasını şişirmemek için 7 gün saklanır
+        name: SkyCoreOS-Boot-Result
+        path: |
+          os_image.iso
+          screenshot.png
