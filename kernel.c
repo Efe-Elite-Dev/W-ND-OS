@@ -59,7 +59,7 @@ int is_graphics_mode = 1;
 char cmd_buffer[16];
 int cmd_idx = 0;
 
-// Dış donanım ve alt sistem modülleri bildirimleri (image_f88ab0.png içeriği)
+// Dış donanım ve alt sistem modülleri bildirimleri
 extern void setup_init(void);
 extern void setup_handle_input(uint8_t scancode);
 extern void force_graphics_hardware(void);
@@ -115,12 +115,18 @@ void print_string(const char* str) {
     }
 }
 
+// 🔥 YENİ ENTEGRASYON: "sne" komutunu avlayan CLI fonksiyonu
 void handle_cli_command(const char* cmd) {
-    if (cmd[0] == 's' && cmd[1] == 's') {
+    if (cmd[0] == 's' && cmd[1] == 'n' && cmd[2] == 'e') {
         is_graphics_mode = 1;
+        force_graphics_hardware(); // Ekran kartını zorla grafik moduna çek
+        setup_init();              // Arayüzü tetikle
+    } else if (cmd[0] == 's' && cmd[1] == 's') { // Eski komut desteği korundu
+        is_graphics_mode = 1;
+        force_graphics_hardware();
         setup_init(); 
     } else {
-        print_string("\nSkyCoreOS> ");
+        print_string("\nBilinmeyen Komut! Gecerli mod: sne\nSkyCoreOS> ");
     }
 }
 
@@ -173,7 +179,6 @@ void draw_vertical_gradient(uint32_t color_top, uint32_t color_bottom) {
 }
 
 void draw_char_basic(int x, int y, char c, uint32_t color) {
-    // Tüm harfleri kapsayan sabit ve güvenli font matrisi (Fallback bitmap font)
     static const uint8_t generic_font[8] = {0x3C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x66, 0x00};
     static const uint8_t font_mock[8] = {0x3C, 0x66, 0x60, 0x3C, 0x06, 0x66, 0x3C, 0x00};
     
@@ -378,10 +383,9 @@ void regress_os_stage(void) {
 // ==============================================================================
 
 void kernel_main(void* mboot_ptr, uint32_t magic) {
-    // CRITICAL FIX 1: Multiboot yapısından VirtualBox'ın gerçek LFB adresini çözümlüyoruz
     if (magic == 0x2BADB002 && mboot_ptr != NULL) {
         uint32_t flags = *(uint32_t*)mboot_ptr;
-        if (flags & (1 << 11)) { // VBE grafik bilgisi geçerli mi?
+        if (flags & (1 << 11)) { 
             uint32_t* vbe_mode_info = (uint32_t*)((uint8_t*)mboot_ptr + 72);
             uint32_t real_fb_address = *vbe_mode_info;
             if (real_fb_address != 0) {
@@ -390,15 +394,12 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
         }
     }
 
-    // CRITICAL FIX 2: Yazdığımız donanımsal VGA darbe modunu ateşliyoruz!
     force_graphics_hardware();
 
-    // Güvenli başlatma gecikmesi loops
     for (volatile int delay = 0; delay < 4000000; delay++) {
         __asm__ volatile("pause");
     }
 
-    // Sürücüleri ve Alt Sistemleri Ayağa Kaldır (image_f88ab0.png Entegrasyonu)
     idt_init();
     screen_init();
     keyboard_init();
@@ -411,7 +412,6 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
 
     setup_init(); 
     
-    // Güvenlik Kilidi: Eğer adres hâlâ sıfırsa çökme ekranına pasla
     if (GRAPHICS_FRAMEBUFFER == 0) {
         kpanic(0x01, "LFB Hafiza Hatasi: Grafik Adresi Baglanamadi!");
     }
@@ -422,7 +422,6 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
     for(int i = 0; i < 16; i++) cmd_buffer[i] = 0;
     cmd_idx = 0;
 
-    // Ana işletim sistemi döngüsü
     while (1) {
         if (inb(0x64) & 1) { 
             uint8_t scancode = inb(0x60);
@@ -445,11 +444,22 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
                     }
                 }
             } else {
+                // Metin Modunda CLI Girdilerini Yakala
                 if (!(scancode & 0x80)) {
                     if (scancode == 0x1F) { // 'S' Tuşu
                         if (cmd_idx < 14) { 
                             cmd_buffer[cmd_idx++] = 's'; 
                             print_string("s"); 
+                        }
+                    } else if (scancode == 0x31) { // 🔥 'N' Tuşu Scancode'u
+                        if (cmd_idx < 14) { 
+                            cmd_buffer[cmd_idx++] = 'n'; 
+                            print_string("n"); 
+                        }
+                    } else if (scancode == 0x12) { // 🔥 'E' Tuşu Scancode'u
+                        if (cmd_idx < 14) { 
+                            cmd_buffer[cmd_idx++] = 'e'; 
+                            print_string("e"); 
                         }
                     } else if (scancode == 0x1C) { // ENTER Tuşu
                         cmd_buffer[cmd_idx] = '\0';
@@ -461,6 +471,6 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
                 }
             }
         }
-        __asm__ volatile("hlt"); // İşlemciyi boşa yorma, kesme bekle aga!
+        __asm__ volatile("hlt"); 
     }
 }
