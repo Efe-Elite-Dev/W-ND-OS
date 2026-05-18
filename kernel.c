@@ -76,7 +76,7 @@ extern void screen_init(void);
 extern void keyboard_init(void);
 
 // ==============================================================================
-// 🛠️ 3. DÜŞÜK SEVİYELİ İŞLEMCİ PORT GİRİŞ/ÇIKIŞ FONKSIONS (I/O PORTS)
+// 🛠️ 3. DÜŞÜK SEVİYELİ İŞLEMCİ PORT GİRİŞ/ÇIKIŞ FONKSİYONLARI (I/O PORTS)
 // ==============================================================================
 
 static inline uint8_t inb(uint16_t port) {
@@ -403,7 +403,7 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
 
     // Alt sistemleri tetikle
     idt_init();
-    screen_init();
+    screen_init(); // Projedeki screen.c içindeki gerçek fonksiyon çağrılacak
     keyboard_init();
     mouse_init();
     
@@ -480,10 +480,8 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
 // ==============================================================================
 // 🛠️ LINKER SUSTURUCU GÜVENLİ KÖPRÜLER (STUBS)
 // ==============================================================================
-// Bu gövdeler, alt sistem dosyalarındaki olası isim uyuşmazlıklarında linker'ın 
-// hata verip derlemeyi kesmesini tamamen engeller.
+// Çakışmayı önlemek için 'screen_init' buradan kaldırıldı, screen.c'den okunuyor.
 void idt_init(void) {}
-void screen_init(void) {}
 void keyboard_init(void) {}
 void mouse_init(void) {}
 void wind_subsystem_init(void) {}
