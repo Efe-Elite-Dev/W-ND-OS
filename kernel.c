@@ -17,10 +17,10 @@
 // ==============================================================================
 
 typedef enum {
-    STATE_WELCOME = 0,    // Arama 1: İlk Kurulum Ekranı - Hoş Geldiniz
-    STATE_LOCATION = 1,   // Arama 2: Konum & Saat Ayarlama (Türkiye Haritası)
-    STATE_SUMMARY = 2,    // Arama 3: Giriş Bilgileri & Tamamlama
-    STATE_DESKTOP = 3     // Arama 4: Fırtına & Ay Temalı Widget'lı Masaüstü!
+    STATE_WELCOME = 0,    // Aşama 1: İlk Kurulum Ekranı - Hoş Geldiniz
+    STATE_LOCATION = 1,   // Aşama 2: Konum & Saat Ayarlama (Türkiye Haritası)
+    STATE_SUMMARY = 2,    // Aşama 3: Giriş Bilgileri & Tamamlama
+    STATE_DESKTOP = 3     // Aşama 4: Fırtına & Ay Temalı Widget'lı Masaüstü!
 } OS_UI_STATE;
 
 // Global Çekirdek Durum Değişkeni
@@ -29,7 +29,7 @@ volatile OS_UI_STATE current_os_state = STATE_WELCOME;
 // Ekran Çözünürlüğü Tanımlamaları
 #define SCREEN_WIDTH         1024
 #define SCREEN_HEIGHT        768
-#define SCREEN_BPP           32      
+#define SCREEN_BPP            32      
 
 // Donanımsal Renk Paleti Makroları
 #define COLOR_DEEP_PURPLE    0xFF1A0F2E  
@@ -51,16 +51,28 @@ uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000;
 int text_x = 0;
 int text_y = 0;
 
-uint32_t* const GRAPHICS_FRAMEBUFFER = (uint32_t*)0xFD000000;
+// Çekirdeğin dinamik olarak güncelleyeceği esnek framebuffer pointer'ı
+uint32_t* GRAPHICS_FRAMEBUFFER = (uint32_t*)0xFD000000;
 
 int is_graphics_mode = 1; 
 
 char cmd_buffer[16];
 int cmd_idx = 0;
 
-// Dış donanım kontrol birimleri bildirimleri
+// Dış donanım ve alt sistem modülleri bildirimleri (image_f88ab0.png içeriği)
 extern void setup_init(void);
 extern void setup_handle_input(uint8_t scancode);
+extern void force_graphics_hardware(void);
+extern void kpanic(uint8_t error_code, const char* message);
+
+extern void wind_subsystem_init(void);
+extern void exe_subsystem_init(void);
+extern void ai_subsystem_init(void);
+extern void deb_subsystem_init(void);
+extern void idt_init(void);
+extern void mouse_init(void);
+extern void screen_init(void);
+extern void keyboard_init(void);
 
 // ==============================================================================
 // 🛠️ 3. DÜŞÜK SEVİYELİ İŞLEMCİ PORT GİRİŞ/ÇIKIŞ FONKSİYONLARI (I/O PORTS)
@@ -103,7 +115,6 @@ void print_string(const char* str) {
     }
 }
 
-// CRITICAL FIX: handle_cli_command fonksiyonu kernel_main'den önce görünmesi için yukarı taşındı!
 void handle_cli_command(const char* cmd) {
     if (cmd[0] == 's' && cmd[1] == 's') {
         is_graphics_mode = 1;
@@ -152,7 +163,7 @@ void draw_vertical_gradient(uint32_t color_top, uint32_t color_bottom) {
     for (int y = 0; y < SCREEN_HEIGHT; y++) {
         uint8_t r = ((color_top >> 16) & 0xFF) * (SCREEN_HEIGHT - y) / SCREEN_HEIGHT + ((color_bottom >> 16) & 0xFF) * y / SCREEN_HEIGHT;
         uint8_t g = ((color_top >> 8) & 0xFF) * (SCREEN_HEIGHT - y) / SCREEN_HEIGHT + ((color_bottom >> 8) & 0xFF) * y / SCREEN_HEIGHT;
-        uint8_t b = (color_top & 0xFF) * (SCREEN_HEIGHT - y) / SCREEN_HEIGHT + ((color_bottom >> 0) & 0xFF) * y / SCREEN_HEIGHT;
+        uint8_t b = (color_top & 0xFF) * (SCREEN_HEIGHT - y) / SCREEN_HEIGHT + (color_bottom & 0xFF) * y / SCREEN_HEIGHT;
         uint32_t mixed_color = (0xFF << 24) | (r << 16) | (g << 8) | b;
         
         for (int x = 0; x < SCREEN_WIDTH; x++) {
@@ -162,9 +173,14 @@ void draw_vertical_gradient(uint32_t color_top, uint32_t color_bottom) {
 }
 
 void draw_char_basic(int x, int y, char c, uint32_t color) {
+    // Tüm harfleri kapsayan sabit ve güvenli font matrisi (Fallback bitmap font)
+    static const uint8_t generic_font[8] = {0x3C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x66, 0x00};
     static const uint8_t font_mock[8] = {0x3C, 0x66, 0x60, 0x3C, 0x06, 0x66, 0x3C, 0x00};
+    
+    const uint8_t* active_font = (c == 'S' || c == 's') ? font_mock : generic_font;
+
     for (int r = 0; r < 8; r++) {
-        uint8_t row_byte = (c == 'S' || c == 's') ? font_mock[r] : 0xFF; 
+        uint8_t row_byte = active_font[r]; 
         for (int b = 0; b < 8; b++) {
             if (row_byte & (1 << (7 - b))) {
                 put_pixel(x + b, y + r, color);
@@ -187,7 +203,7 @@ void draw_string_graphics(int x, int y, const char* str, uint32_t color) {
 }
 
 // ==============================================================================
-// 🖼6. SİSTEM DURUM RENDER MOTORU (SCREEN DRAWING FUNCTIONS)
+// 🖼 6. SİSTEM DURUM RENDER MOTORU (SCREEN DRAWING FUNCTIONS)
 // ==============================================================================
 
 void draw_ui_welcome_screen(void) {
@@ -362,17 +378,51 @@ void regress_os_stage(void) {
 // ==============================================================================
 
 void kernel_main(void* mboot_ptr, uint32_t magic) {
-    (void)mboot_ptr;
-    (void)magic;
+    // CRITICAL FIX 1: Multiboot yapısından VirtualBox'ın gerçek LFB adresini çözümlüyoruz
+    if (magic == 0x2BADB002 && mboot_ptr != NULL) {
+        uint32_t flags = *(uint32_t*)mboot_ptr;
+        if (flags & (1 << 11)) { // VBE grafik bilgisi geçerli mi?
+            uint32_t* vbe_mode_info = (uint32_t*)((uint8_t*)mboot_ptr + 72);
+            uint32_t real_fb_address = *vbe_mode_info;
+            if (real_fb_address != 0) {
+                GRAPHICS_FRAMEBUFFER = (uint32_t*)real_fb_address;
+            }
+        }
+    }
+
+    // CRITICAL FIX 2: Yazdığımız donanımsal VGA darbe modunu ateşliyoruz!
+    force_graphics_hardware();
+
+    // Güvenli başlatma gecikmesi loops
+    for (volatile int delay = 0; delay < 4000000; delay++) {
+        __asm__ volatile("pause");
+    }
+
+    // Sürücüleri ve Alt Sistemleri Ayağa Kaldır (image_f88ab0.png Entegrasyonu)
+    idt_init();
+    screen_init();
+    keyboard_init();
+    mouse_init();
     
+    wind_subsystem_init();
+    exe_subsystem_init();
+    ai_subsystem_init();
+    deb_subsystem_init();
+
     setup_init(); 
     
+    // Güvenlik Kilidi: Eğer adres hâlâ sıfırsa çökme ekranına pasla
+    if (GRAPHICS_FRAMEBUFFER == 0) {
+        kpanic(0x01, "LFB Hafiza Hatasi: Grafik Adresi Baglanamadi!");
+    }
+
     current_os_state = STATE_WELCOME;
     refresh_system_display();
 
     for(int i = 0; i < 16; i++) cmd_buffer[i] = 0;
     cmd_idx = 0;
 
+    // Ana işletim sistemi döngüsü
     while (1) {
         if (inb(0x64) & 1) { 
             uint8_t scancode = inb(0x60);
@@ -411,6 +461,6 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
                 }
             }
         }
-        __asm__ volatile("pause");
+        __asm__ volatile("hlt"); // İşlemciyi boşa yorma, kesme bekle aga!
     }
 }
