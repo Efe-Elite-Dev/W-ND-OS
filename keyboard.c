@@ -1,32 +1,22 @@
-#include "wind_subsystem.h"
+#include "io.h"
+#include "gui.h"
 
-#define KEYBOARD_DATA_PORT 0x60
-#define KEYBOARD_STATUS_PORT 0x64
+bool ai_hud_visible = false;
+static bool alt_pressed = false;
 
-static uint8_t last_scancode = 0;
+void keyboard_handler() {
+    uint8_t scancode = inb(0x60);
 
-/**
- * @brief Klavye sürücüsünü ve donanım tamponunu ilk fırlatan motor.
- */
-void init_keyboard(void) {
-  last_scancode = 0;
-  // Donanım tamponunu temizlemek için boşa bir okuma yapıyoruz
-  (void)inb(KEYBOARD_DATA_PORT);
+    // Alt Tuşu Durum Kontrolü (Scancode 0x38 = ALT basıldı, 0xB8 = ALT bırakıldı)
+    if (scancode == 0x38) {
+        alt_pressed = true;
+    } else if (scancode == 0xB8) {
+        alt_pressed = false;
+    }
+
+    // Space Tuşu Kontrolü (Scancode 0x39 = SPACE basıldı)
+    if (scancode == 0x39 && alt_pressed) {
+        // ALT + SPACE Kombinasyonu Yakalandı!
+        ai_hud_visible = !ai_hud_visible; // HUD Panelini aç/kapat
+    }
 }
-
-/**
- * @brief Klavye tampon belleğinde yeni tuş basımı var mı kontrol eder.
- */
-void check_keyboard_pure(void) {
-  uint8_t status = inb(KEYBOARD_STATUS_PORT);
-
-  // En düşük bit 1 ise tamponda okunmayı bekleyen veri vardır
-  if (status & 0x01) {
-    last_scancode = inb(KEYBOARD_DATA_PORT);
-  }
-}
-
-/**
- * @brief Okunan en son donanım tarama kodunu döner.
- */
-uint8_t get_last_scancode(void) { return last_scancode; }
