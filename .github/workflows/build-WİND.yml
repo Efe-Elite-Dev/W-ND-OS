@@ -2,7 +2,12 @@ name: Build WindOS ISO
 
 on:
   push:
+    branches: [ "main" ] # Sadece main branch pushlarında tetiklenmesi istersen (isteğe bağlı)
   pull_request:
+
+# Release oluşturabilmek için gerekli yazma izni
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -15,7 +20,6 @@ jobs:
       - name: Install Tools
         run: |
           sudo apt update
-
           sudo apt install -y \
             gcc-multilib \
             nasm \
@@ -54,14 +58,15 @@ jobs:
 
       - name: Create grub.cfg
         run: |
-          echo 'set timeout=0' > iso/boot/grub/grub.cfg
-          echo 'set default=0' >> iso/boot/grub/grub.cfg
-          echo '' >> iso/boot/grub/grub.cfg
-          echo 'menuentry "Wind OS"' >> iso/boot/grub/grub.cfg
-          echo '{' >> iso/boot/grub/grub.cfg
-          echo '    multiboot /boot/windos.elf' >> iso/boot/grub/grub.cfg
-          echo '    boot' >> iso/boot/grub/grub.cfg
-          echo '}' >> iso/boot/grub/grub.cfg
+          cat << 'EOF' > iso/boot/grub/grub.cfg
+          set timeout=0
+          set default=0
+
+          menuentry "Wind OS" {
+              multiboot /boot/windos.elf
+              boot
+          }
+          EOF
 
       - name: Build ISO
         run: |
@@ -78,6 +83,9 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: latest
+          name: "WindOS Latest Build"
+          body: "Automated build of WindOS from main branch."
           files: WindOS.iso
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
