@@ -56,9 +56,10 @@ volatile int is_graphics_mode = 1;
 char cmd_buffer[16];
 int cmd_idx = 0;
 
-// Gerçek harici tetikleyiciler
+// Orijinal dosyalardan (.c) gelen gerçek fonksiyonların bildirimleri
 extern void force_graphics_hardware(void);
 extern void kpanic(uint8_t error_code, const char* message);
+extern void screen_init(void);
 extern void setup_init(void);
 extern void setup_handle_input(uint8_t scancode);
 
@@ -135,7 +136,7 @@ void draw_vertical_gradient(uint32_t color_top, uint32_t color_bottom) {
 }
 
 void draw_char_basic(int x, int y, char c, uint32_t color) {
-    (void)c; // Warning'i susturmak için bypass
+    (void)c; 
     static const uint8_t font_matrix[8] = {0x3C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x66, 0x00};
     for (int r = 0; r < 8; r++) {
         uint8_t row_byte = font_matrix[r]; 
@@ -163,10 +164,8 @@ void draw_string_graphics(int x, int y, const char* str, uint32_t color) {
 void draw_turkey_map_vector(int x, int y) {
     draw_filled_rectangle(x, y, 400, 180, COLOR_MAP_BG);
     draw_rectangle_outline(x, y, 400, 180, COLOR_WHITE);
-    // HATA DÜZELTİLDİ: COLOR_LAND_GRAY yerine COLOR_MAP_LAND kullanıldı
     draw_filled_rectangle(x + 40, y + 40, 320, 100, COLOR_MAP_LAND);
     draw_filled_rectangle(x + 10, y + 20, 50, 40, COLOR_MAP_LAND);
-    // İstanbul Pin Noktası
     draw_filled_rectangle(x + 55, y + 45, 8, 8, 0xFFFF0000); 
     draw_string_graphics(x + 70, y + 45, "Istanbul", COLOR_TEXT_LIGHT);
 }
@@ -276,7 +275,6 @@ void draw_ui_main_desktop(void) {
     draw_filled_rectangle(wd_x, wd_y, 500, 200, COLOR_WIDGET_BG);
     draw_rectangle_outline(wd_x, wd_y, 500, 200, COLOR_WHITE);
     draw_string_graphics(wd_x + 20, wd_y + 25, "SAAT: 26:03", COLOR_GLOW_CYAN);
-    // HATA DÜZELTİLDİ: Markdown kalıntısı silindi
     draw_string_graphics(wd_x + 20, wd_y + 65, "Hava Durumu ve Saat - Esenyurt", COLOR_TEXT_LIGHT); 
     draw_string_graphics(wd_x + 20, wd_y + 105, "21C - Bulutlu ve Firtina", COLOR_LIGHT_GRAY);
     
@@ -375,6 +373,10 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
                 if (!(scancode & 0x80)) {
                     if (scancode == 0x1C) advance_os_stage();       // ENTER -> İleri
                     else if (scancode == 0x0E) regress_os_stage();  // BACKSPACE -> Geri
+                    else {
+                        // Diğer klavye girdilerini projenin kendi orijinal setup sistemine pasla
+                        setup_handle_input(scancode);
+                    }
                 }
             }
         }
@@ -383,15 +385,14 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
 }
 
 // ==============================================================================
-// 🛠️ LINKER SUSTURUCU KÖPRÜLER (STUBS) - MÜKERRER OLMAMASI İÇİN SADECE GÖVDELERİ
+// 🛠️ LINKER SUSTURUCU KÖPRÜLER (STUBS)
+// Mükerrer (multiple definition) olmaması için screen_init, setup_init ve 
+// setup_handle_input buralardan tamamen KALDIRILDI!
 // ==============================================================================
 void idt_init(void) {}
 void keyboard_init(void) {}
 void mouse_init(void) {}
-void screen_init(void) {}
 void wind_subsystem_init(void) {}
 void exe_subsystem_init(void) {}
 void ai_subsystem_init(void) {}
 void deb_subsystem_init(void) {}
-void setup_init(void) {}
-void setup_handle_input(uint8_t scancode) { (void)scancode; }
