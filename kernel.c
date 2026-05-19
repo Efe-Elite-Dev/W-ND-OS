@@ -16,8 +16,7 @@ uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000;
 int text_x = 0;
 int text_y = 0;
 
-// HATA DÜZELTİLDİ: Diğer dosyaların (kerror.c, vga_force.c) derlenirken 
-// aradığı ama artık kullanmadığımız grafik buffer değişkenini sembolik olarak tanımlıyoruz.
+// Orijinal kerror.c ve vga_force.c dosyalarının hata vermeden derlenmesi için sembolik tanım
 uint32_t* GRAPHICS_FRAMEBUFFER = NULL;
 
 // Çakışma yaratmamak için sadece I/O fonksiyonu
