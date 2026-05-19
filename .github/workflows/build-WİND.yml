@@ -14,10 +14,11 @@ jobs:
     - name: Repoyu Klonla
       uses: actions/checkout@v4
 
-    - name: Derleme Araçlarını Kur (GCC, NASM & ISO Sıkıştırma Araçları)
+    - name: Derleme Araçlarını Kur (GCC, NASM & BIOS Paketleri)
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-multilib g++-multilib nasm make lld binutils grub-common xorriso mtools
+        # i386-pc kütüphanesini zorunlu kılmak için grub-pc-bin paketini de ekliyoruz
+        sudo apt-get install -y gcc-multilib g++-multilib nasm make lld binutils grub-common grub-pc-bin xorriso mtools
 
     - name: Çalıştırılabilir İzinleri Ver
       run: chmod +x ./build.sh
@@ -25,7 +26,7 @@ jobs:
     - name: Çekirdeği Derle (Saf Terminal Modu)
       run: ./build.sh
 
-    - name: GRUB Kırpma ve 3MB Altı Minimal ISO Oluşturma
+    - name: GRUB Temizliği ve 1MB Hedefli ISO Oluşturma
       run: |
         # ISO klasör yapısını hazırla
         mkdir -p iso_root/boot/grub
@@ -39,29 +40,31 @@ jobs:
           echo "HATA: kernel.bin bulunamadı!" && exit 1
         fi
         
-        # Minimal GRUB yapılandırması
+        # En minimal GRUB yapılandırması
         cat << 'EOF' > iso_root/boot/grub/grub.cfg
         set timeout=0
         set default=0
-        menuentry "Sky Core OS (Saf Core)" {
+        menuentry "Sky Core OS" {
             multiboot /boot/kernel.bin
             boot
         }
         EOF
         
-        # Sadece boot ve terminal modunu destekleyecek GRUB modüllerini seçerek ISO basıyoruz
-        # Bu parametreler GRUB'ın tüm font ve video sürücülerini atmasını sağlar, boyutu eritir!
-        grub-mkrescue --modules="boot normal multiboot biosdisk ext2 part_msdos" -o skycore.iso iso_root
+        # HATA DÜZELTİLDİ VE BOYUT KIRPILDI: 
+        # Mimariyi i386-pc (standart x86 BIOS) olarak kilitliyoruz.
+        # Sadece sistemi ayağa kaldıracak en kritik 3 modülü (multiboot, normal, ext2) bırakıyoruz.
+        # Geri kalan yüzlerce modül atıldığı için ISO boyutu radikal şekilde düşecek.
+        grub-mkrescue -d /usr/lib/grub/i386-pc --modules="multiboot normal ext2" -o skycore.iso iso_root
         
-        # Boyut kontrolü yapalım (Boyutu terminal loglarında görmek için)
-        echo "=== NİHAİ ISO BOYUTU ==="
+        # Nihai boyutu terminale yazdır
+        echo "=== NİHAİ SIKIŞTIRILMIŞ ISO BOYUTU ==="
         du -sh skycore.iso
 
     - name: Derleme Çıktılarını Arşivle (Artifact)
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: skycore-pure-core-iso
+        name: skycore-ultra-minimal-iso
         path: |
           skycore.iso
         if-no-files-found: error
