@@ -14,10 +14,10 @@ jobs:
     - name: Repoyu Klonla
       uses: actions/checkout@v4
 
-    - name: Derleme Araçlarını Kur (GCC Cross-Compiler & NASM)
+    - name: Derleme Araçlarını Kur (GCC, NASM & ISO Araçları)
       run: |
         sudo apt-get update
-        sudo apt-get install -y gcc-multilib g++-multilib nasm make lld binutils
+        sudo apt-get install -y gcc-multilib g++-multilib nasm make lld binutils grub-common xorriso mtools
 
     - name: Çalıştırılabilir İzinleri Ver
       run: chmod +x ./build.sh
@@ -25,13 +25,39 @@ jobs:
     - name: Çekirdeği Derle (Saf Terminal Modu)
       run: ./build.sh
 
+    - name: GRUB Klasör Yapısını Oluştur ve ISO Bas
+      run: |
+        # ISO için geçici klasör yapısını kuruyoruz
+        mkdir -p iso_root/boot/grub
+        
+        # Derlenen .bin dosyasını buraya kopyala (Dosya adın farklıysa kernel.bin kısmını değiştir aga)
+        if [ -f bin/kernel.bin ]; then
+          cp bin/kernel.bin iso_root/boot/kernel.bin
+        elif [ -f kernel.bin ]; then
+          cp kernel.bin iso_root/boot/kernel.bin
+        else
+          echo "HATA: Çekirdek .bin dosyası bulunamadı!" && exit 1
+        fi
+        
+        # Basit bir GRUB yapılandırma dosyası oluşturuyoruz
+        cat << 'EOF' > iso_root/boot/grub/grub.cfg
+        set timeout=0
+        set default=0
+        
+        menuentry "Sky Core OS v1.5" {
+            multiboot /boot/kernel.bin
+            boot
+        }
+        EOF
+        
+        # xorriso ve grub yardımıyla nihai ISO dosyasını oluşturuyoruz
+        grub-mkrescue -o skycore.iso iso_root
+
     - name: Derleme Çıktılarını Arşivle (Artifact)
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: skycore-vortex-kernel
+        name: skycore-vortex-iso
         path: |
-          bin/
-          *.bin
           *.iso
-        if-no-files-found: warn
+        if-no-files-found: error
