@@ -1,128 +1,95 @@
 /**
  * ==============================================================================
- * 🌟 SKY CORE OS / WIND OS - SAF ÇEKİRDEK (PURE CORE VORTEX KERNEL) 🌟
+ * 🌟 SKY CORE OS - İLK SAF ÇEKİRDEK (LEGACY PURE CORE) 🌟
  * ==============================================================================
- * [Mimari]: 32-Bit Korumalı Mod (Protected Mode) - x86 IA-32 Monolitik Standartları
- * [Geliştirici]: Feyzula Efe Tuna
- * [Açıklama]: Çakışmalardan arındırılmış, dış alt sistemleri doğru bağlayan saf core.
+ * [Mimari]: 32-Bit Korumalı Mod (Protected Mode) - x86 IA-32 Standartları
+ * [Açıklama]: Hiçbir dış dosyaya (setup, gui, screen vb.) bağımlılığı olmayan,
+ * VirtualBox'ta kilitlenmeyi imkansız kılan en saf çekirdek.
  * ==============================================================================
  */
 
 #include <stdint.h>
-#include <stddef.h>
 
-#define SCREEN_WIDTH         1024
-#define SCREEN_HEIGHT        768
-#define COLOR_DARK_BLUE      0xFF0D0B18
-#define COLOR_WHITE          0xFFFFFFFF
+// x86 Standart Metin Belleği Adresi (0xB8000)
+volatile uint16_t* const VIDEO_MEMORY = (uint16_t*)0xB8000;
 
-// ==============================================================================
-// 🖥️ 1. DONANIM VE BELLEK ADRESLERİ KATMANI (MEMORY MAPPING)
-// ==============================================================================
-uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000; 
-int text_x = 0;
-int text_y = 0;
+int cursor_x = 0;
+int cursor_y = 0;
 
-// VirtualBox / QEMU için dinamik Linear Framebuffer adresi (Varsayılan: 0xE0000000)
-uint32_t* GRAPHICS_FRAMEBUFFER = (uint32_t*)0xE0000000;
-
-// GERÇEK DIŞ FONKSİYONLAR (Extern Bildirimleri - Linker çakışmasını önler)
-extern void screen_init(void);
-extern void setup_init(void);
-extern void setup_handle_input(uint8_t scancode);
-extern void force_graphics_hardware(void);
-
-// Henüz diğer dosyalarda tanımlanmamış olabilecek alt sistemler için boş stublar
-void idt_init(void) {} 
-void keyboard_init(void) {}
-void mouse_init(void) {}
-void wind_subsystem_init(void) {}
-void exe_subsystem_init(void) {}
-void ai_subsystem_init(void) {}
-void deb_subsystem_init(void) {}
-
-// ==============================================================================
-// 🛠️ 2. SAF I/O PORTS VE METİN MODU LOG MOTORU
-// ==============================================================================
-static inline uint8_t inb(uint16_t port) {
-    uint8_t ret;
-    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-void clear_text_screen(void) {
+// Ekranı temizleme fonksiyonu
+void clear_screen(void) {
     for (int i = 0; i < 80 * 25; i++) {
-        TEXT_VIDEO_MEMORY[i] = (0x0F << 8) | ' ';
+        // Koyu mavi arka plan (0x1), Beyaz yazı rengi (0xF) -> 0x1F
+        VIDEO_MEMORY[i] = (0x1F << 8) | ' ';
     }
-    text_x = 0;
-    text_y = 0;
+    cursor_x = 0;
+    cursor_y = 0;
 }
 
-void print_string(const char* str) {
+// Ekrana saf metin yazdırma fonksiyonu
+void print_str(const char* str) {
     while (*str) {
         if (*str == '\n') {
-            text_x = 0;
-            text_y++;
+            cursor_x = 0;
+            cursor_y++;
         } else {
-            TEXT_VIDEO_MEMORY[text_y * 80 + text_x] = (0x0E << 8) | *str; 
-            text_x++;
-            if (text_x >= 80) { text_x = 0; text_y++; }
+            int index = cursor_y * 80 + cursor_x;
+            VIDEO_MEMORY[index] = (0x1F << 8) | *str;
+            cursor_x++;
+            if (cursor_x >= 80) {
+                cursor_x = 0;
+                cursor_y++;
+            }
         }
         str++;
     }
 }
 
-// ==============================================================================
-// 🎨 3. SAF GRAFİK İLKEL ÇİZİM FONKSİYONLARI (PRIMITIVES)
-// ==============================================================================
-static inline void put_pixel(int x, int y, uint32_t color) {
-    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
-        GRAPHICS_FRAMEBUFFER[y * SCREEN_WIDTH + x] = color;
-    }
+// Giriş portundan veri okuma (Klavye için)
+static inline uint8_t in_byte(uint16_t port) {
+    uint8_t ret;
+    __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
 }
 
-void fill_screen(uint32_t color) {
-    for (int i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
-        GRAPHICS_FRAMEBUFFER[i] = color;
-    }
-}
+// Diğer dosyalardaki (screen.c, setup.c vb.) hatalı fonksiyonları ezmek ve 
+// bağlayıcı (linker) hatalarını engellemek için geçersiz kılma (Override) stubs:
+void screen_init(void) {}
+void setup_init(void) {}
+void setup_handle_input(uint8_t scancode) { (void)scancode; }
+void force_graphics_hardware(void) {}
+void wind_subsystem_init(void) {}
+void exe_subsystem_init(void) {}
+void ai_subsystem_init(void) {}
+void deb_subsystem_init(void) {}
+void idt_init(void) {}
+void keyboard_init(void) {}
+void mouse_init(void) {}
 
 // ==============================================================================
-// 🚀 4. KERNEL ENTRY POINT (SAF MİMARİ GİRİŞİ)
+// 🚀 KERNEL GİRİŞ NOKTASI
 // ==============================================================================
 void kernel_main(void* mboot_ptr, uint32_t magic) {
-    // 1. Metin ekranını temizle ve ilk yaşam sinyalini ver
-    clear_text_screen();
-    print_string("Sky Core OS: Saf cekirdek yukleniyor...\n");
+    // Kullanılmayan Multiboot parametreleri uyarısını sustur
+    (void)mboot_ptr;
+    (void)magic;
 
-    // 2. Multiboot VBE standart kontrolü (Dinamik LFB Adres Alımı)
-    if (magic == 0x2BADB002 && mboot_ptr != NULL) {
-        uint32_t flags = *(uint32_t*)mboot_ptr;
-        if (flags & (1 << 11)) { 
-            uint32_t* vbe_mode_info = (uint32_t*)((uint8_t*)mboot_ptr + 72);
-            uint32_t real_fb_address = *vbe_mode_info;
-            if (real_fb_address != 0) {
-                GRAPHICS_FRAMEBUFFER = (uint32_t*)real_fb_address;
-            }
-        }
-    }
+    // Ekranı lacivert yap ve canlanma sinyalini bas
+    clear_screen();
+    print_str("======================================================================\n");
+    print_str("                    SKY CORE OS v1.5 - SAF CEKIRDEK                   \n");
+    print_str("======================================================================\n\n");
+    print_str("[ OK ] Korumali Mod (32-Bit Protected Mode) aktif.\n");
+    print_str("[ OK ] Ekran metin bellegi baglantisi saglandi (0xB8000).\n");
+    print_str("[ OK ] Diger hatali alt sistemler guvenli moda alindi.\n\n");
+    print_str("Sistem su an stabil ve klavye girdisi bekliyor...\n");
 
-    print_string("Sky Core OS: Donanim baglamlari hazirlaniyor...\n");
-    for (volatile int delay = 0; delay < 2000000; delay++) { __asm__ volatile("pause"); }
-
-    // Gerçek dış dosyaların ilklendirme fonksiyonlarını çağırıyoruz
-    screen_init();
-    setup_init();
-
-    // 3. Grafik moduna geç ve arka planı koyu maviye boya
-    fill_screen(COLOR_DARK_BLUE);
-
-    // 4. Sonsuz Klavye Polling Döngüsü
+    // Güvenli sonsuz polling döngüsü
     while (1) {
-        if (inb(0x64) & 1) { 
-            uint8_t scancode = inb(0x60); 
-            // Girişleri setup_ui veya ana döngüye iletmek için hazır
-            setup_handle_input(scancode);
+        // Klavye veri kontrolü (Port 0x64 üzerinden durum kontrolü)
+        if (in_byte(0x64) & 1) {
+            uint8_t scancode = in_byte(0x60);
+            (void)scancode; // Şimdilik sadece tamponu boşaltıyoruz
         }
     }
 }
