@@ -1,49 +1,26 @@
-[BITS 32]
-
-MULTIBOOT_ALIGN     equ 1 << 0
-MULTIBOOT_MEMINFO   equ 1 << 1
-MULTIBOOT_GRAPHICS  equ 1 << 2
-
-MULTIBOOT_FLAGS     equ MULTIBOOT_ALIGN | MULTIBOOT_MEMINFO | MULTIBOOT_GRAPHICS
-MULTIBOOT_MAGIC     equ 0x1BADB002
-MULTIBOOT_CHECKSUM  equ -(MULTIBOOT_MAGIC + MULTIBOOT_FLAGS)
-
+bits 32                         ; 32-bit modda çalışacağımızı belirtiyoruz
 section .multiboot
-align 4
-
-dd MULTIBOOT_MAGIC
-dd MULTIBOOT_FLAGS
-dd MULTIBOOT_CHECKSUM
-
-dd 0
-dd 800
-dd 600
-dd 32
+    align 4
+    dd 0x1BADB002               ; Multiboot sihirli numarası (GRUB bunu arar)
+    dd 0x00                     ; Flaglar (Şimdilik grafik modu vs. istemiyoruz, düz VGA)
+    dd - (0x1BADB002 + 0x00)    ; Checksum (GRUB doğrulaması için şart)
 
 section .text
 global _start
-extern kernel_main
+extern kernel_main              ; kernel.c içindeki ana fonksiyonumuz
 
 _start:
-    cli
-
-    mov esp, stack_top
-
-    ; GRUB parametreleri
-    push ebx
-    push eax
-
-    call kernel_main
-
-.hang:
-    cli
-    hlt
-    jmp .hang
+    cli                         ; Kesmeleri (Interrupts) kapat
+    mov esp, stack_space        ; Stack pointer'ı ayarla
+    call kernel_main            ; C kodumuza zıpla
+    
+halt_loop:
+    hlt                         ; Eğer kernel_main'den dönerse işlemciyi uyut
+    jmp halt_loop
 
 section .bss
-align 16
+resb 8192                       ; 8KB'lık stack alanı ayır
+stack_space:
 
-stack_bottom:
-    resb 16384
-
-stack_top:
+; GitHub Actions'taki linker uyarısını çözen sihirli satır:
+section .note.GNU-stack noalloc noexec nowrite progbits
