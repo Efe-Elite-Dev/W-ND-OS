@@ -1,18 +1,19 @@
 #ifndef SKY_CORE_H
 #define SKY_CORE_H
 
-#include <stdint.h>
+#include "io.h"
+#include "gui.h"
+#include "mouse.h"
+#include "ai_subsystem.h"
+#include "wind_subsystem.h"
+#include "exe_subsystem.h"
 
-// Global Değişken (Herkesin göreceği isim bu olacak)
-extern uint32_t* GRAPHICS_FRAMEBUFFER;
-extern int SCREEN_W;
-extern int SCREEN_H;
+// Sistem durumu
+typedef enum { BOOT, SETUP, DESKTOP, LOADING_APP } SystemState;
+extern SystemState current_state;
 
-// Grafik Fonksiyonları
-void draw_pixel(int x, int y, uint32_t color);
-void draw_rect(int x, int y, int w, int h, uint32_t color);
-void draw_rounded_rect(int x, int y, int w, int h, int radius, uint32_t color);
-void render_ui(void);
-void force_graphics_hardware(void);
+// Merkezi sistem çağrısı
+void sky_execute_file(char* filename); 
+void sky_switch_state(SystemState new_state);
 
 #endif
