@@ -1,4 +1,4 @@
-name: Sky-Core-OS Auto-Build
+name: Build-System
 
 on: [push]
 
@@ -7,17 +7,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Build
+      - name: Compile
         run: |
           sudo apt-get install -y nasm gcc-multilib
           nasm -f elf32 boot.asm -o boot.o
           # Tüm C dosyalarını derle
           gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c *.c
-          # Hepsini kernel.bin'de bağla
+          # Hepsini kernel.bin'de birleştir
           ld -m elf_i386 -T linker.ld -o kernel.bin *.o
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: kernel.bin
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
