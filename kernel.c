@@ -2,16 +2,24 @@
  * ==============================================================================
  * 🌟 SKY CORE OS / WIND OS OPERATING SYSTEM 🌟
  * ==============================================================================
+ * [Proje Kodu]: Sky Core OS v1.5 (Vortex Kernel)
+ * [Mimari]: 32-Bit Korumalı Mod (Protected Mode) - x86 IA-32 Monolitik Standartları
+ * [Geliştirici]: Feyzula Efe Tuna
+ * ==============================================================================
  */
 
 #include <stdint.h>
 #include <stddef.h>
 
+// ==============================================================================
+// 🪐 1. SİSTEM DURUM MAKİNESİ VE GLOBAL SABİTLER (STATE MACHINE CONFIG)
+// ==============================================================================
+
 typedef enum {
-    STATE_WELCOME = 0,
-    STATE_LOCATION = 1,
-    STATE_SUMMARY = 2,
-    STATE_DESKTOP = 3
+    STATE_WELCOME = 0,    // Aşama 1: İlk Kurulum Ekranı - Hoş Geldiniz
+    STATE_LOCATION = 1,   // Aşama 2: Konum & Saat Ayarlama (Türkiye Haritası)
+    STATE_SUMMARY = 2,    // Aşama 3: Giriş Bilgileri & Tamamlama
+    STATE_DESKTOP = 3     // Aşama 4: Fırtına & Ay Temalı Widget'lı Masaüstü!
 } OS_UI_STATE;
 
 volatile OS_UI_STATE current_os_state = STATE_WELCOME;
@@ -19,33 +27,46 @@ volatile OS_UI_STATE current_os_state = STATE_WELCOME;
 #define SCREEN_WIDTH         1024
 #define SCREEN_HEIGHT        768
 
-#define COLOR_DEEP_PURPLE    0xFF1A0F2E  
-#define COLOR_DARK_BLUE      0xFF0D0B18  
+// Yenilenen UI Renk Paleti (Ekran Görüntülerine Birebir Uyumlu)
+#define COLOR_DEEP_PURPLE    0xFF1A0F2E  // Ana Arka Plan Koyu Mor
+#define COLOR_DARK_BLUE      0xFF0D0B18  // Alt/Üst Bar ve Gölgeler
 #define COLOR_WHITE          0xFFFFFFFF  
 #define COLOR_LIGHT_GRAY     0xFFD0D0D0  
-#define COLOR_ACTIVE_BLUE    0xFF2575FC  
-#define COLOR_MAP_BG         0xFF3A3A5E  
+#define COLOR_ACTIVE_BLUE    0xFF2575FC  // Buton Aktif Mavisi
+#define COLOR_MAP_BG         0xFF3A3A5E  // Harita Paneli Arka Planı
 #define COLOR_TEXT_DARK      0xFF222222  
 #define COLOR_TEXT_LIGHT     0xFFF5F5F5  
-#define COLOR_WIDGET_BG      0xAA211C38  
+#define COLOR_WIDGET_BG      0xAA211C38  // Transparan Widget Grisi/Moru
 #define COLOR_GLOW_CYAN      0xFF00E5FF  
 
-uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000;
+// ==============================================================================
+// 🖥️ 2. DONANIM VE BELLEK ADRESLERİ KATMANI (32-BIT MEMORY MAP)
+// ==============================================================================
+
+uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000; // x86 Standart Metin Belleği
 int text_x = 0;
 int text_y = 0;
 
-// Sanal makineler için en kararlı Linear Framebuffer taban adresi
+// VIRTUALBOX UYUMU: Varsayılan LFB adresi (VirtualBox VBE Standardı)
 uint32_t* GRAPHICS_FRAMEBUFFER = (uint32_t*)0xE0000000;
 int is_graphics_mode = 1; 
 
 char cmd_buffer[16];
 int cmd_idx = 0;
 
+// Dış fonksiyon bildirimleri
 extern void setup_init(void);
 extern void setup_handle_input(uint8_t scancode);
 extern void force_graphics_hardware(void);
 extern void kpanic(uint8_t error_code, const char* message);
 
+extern void wind_subsystem_init(void);
+extern void exe_subsystem_init(void);
+extern void ai_subsystem_init(void);
+extern void deb_subsystem_init(void);
+extern void screen_init(void);
+
+// Linker Susturucu Köprüler (Stubs)
 void idt_init(void) {} 
 void keyboard_init(void) {}
 void mouse_init(void) {}
@@ -54,13 +75,16 @@ void exe_subsystem_init(void) {}
 void ai_subsystem_init(void) {}
 void deb_subsystem_init(void) {}
 
+// ==============================================================================
+// 🛠️ 3. I/O PORTS VE METİN MODU MOTORU (GÜVENLİ FALLBACK)
+// ==============================================================================
+
 static inline uint8_t inb(uint16_t port) {
     uint8_t ret;
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
 
-// Metin modu için güvenli temizleyici (Eğer grafik modu patlarsa log görebilmek için)
 void clear_text_screen(void) {
     for (int i = 0; i < 80 * 25; i++) {
         TEXT_VIDEO_MEMORY[i] = (0x0F << 8) | ' ';
@@ -75,13 +99,17 @@ void print_string(const char* str) {
             text_x = 0;
             text_y++;
         } else {
-            TEXT_VIDEO_MEMORY[text_y * 80 + text_x] = (0x0E << 8) | *str; // Sarı metin
+            TEXT_VIDEO_MEMORY[text_y * 80 + text_x] = (0x0E << 8) | *str; // Sarı metin logu
             text_x++;
             if (text_x >= 80) { text_x = 0; text_y++; }
         }
         str++;
     }
 }
+
+// ==============================================================================
+// 🎨 4. ÇEKİRDEK İÇİ GRAFİK ÇİZİM MOTORU (GRAPHICS ENGINE)
+// ==============================================================================
 
 static inline void put_pixel(int x, int y, uint32_t color) {
     if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
@@ -128,7 +156,7 @@ void draw_vertical_gradient(uint32_t color_top, uint32_t color_bottom) {
 
 void draw_char_basic(int x, int y, char c, uint32_t color) {
     static const uint8_t font_matrix[8] = {0x3C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x66, 0x00};
-    (void)c;
+    (void)c; // Kullanılmayan parametre uyarısını kapatır
     for (int r = 0; r < 8; r++) {
         uint8_t row_byte = font_matrix[r]; 
         for (int b = 0; b < 8; b++) {
@@ -160,6 +188,10 @@ void draw_turkey_map_vector(int x, int y) {
     draw_filled_rectangle(x + 55, y + 45, 8, 8, 0xFFFF0000); 
     draw_string_graphics(x + 70, y + 45, "Istanbul", COLOR_TEXT_LIGHT);
 }
+
+// ==============================================================================
+// 🖼 5. SİSTEM DURUM RENDER MOTORU (SCREEN DRAWING FUNCTIONS)
+// ==============================================================================
 
 void draw_ui_welcome_screen(void) {
     draw_vertical_gradient(COLOR_DEEP_PURPLE, COLOR_DARK_BLUE);
@@ -330,11 +362,16 @@ void regress_os_stage(void) {
     }
 }
 
+// ==============================================================================
+// 🚀 6. KERNEL ENTRY POINT (x86 32-BIT PROTECTED MODE)
+// ==============================================================================
+
 void kernel_main(void* mboot_ptr, uint32_t magic) {
+    // 1. Ekranı metin modunda temizle ve yükleme durumunu yaz
     clear_text_screen();
     print_string("Sky Core OS yukleniyor...\n");
 
-    // Multiboot VBE Kontrolü
+    // 2. Multiboot VBE Bilgilerini Dinamik Kontrol Et (VBox / QEMU Güvenliği)
     if (magic == 0x2BADB002 && mboot_ptr != NULL) {
         uint32_t flags = *(uint32_t*)mboot_ptr;
         if (flags & (1 << 11)) { 
@@ -346,35 +383,26 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
         }
     }
 
-    // Donanım zorlamasını VirtualBox uyumu için askıya alıyoruz veya kontrollü çağırıyoruz
-    // force_graphics_hardware(); 
-
     print_string("Grafik alt yapisi kuruluyor...\n");
     for (volatile int delay = 0; delay < 2000000; delay++) { __asm__ volatile("pause"); }
 
-    idt_init();
+    // Alt donanım yapılarını ayağa kaldır
     screen_init();
-    keyboard_init();
-    mouse_init();
-    
-    wind_subsystem_init();
-    exe_subsystem_init();
-    ai_subsystem_init();
-    deb_subsystem_init();
-
     setup_init(); 
+    
     current_os_state = STATE_WELCOME;
     refresh_system_display();
 
-    // VIRTUALBOX POLING DÖNGÜSÜ: hlt kaldırıldı, böylece kilitlenme önlendi!
+    // 3. VIRTUALBOX KİLİTLENMEYEN POLLING DÖNGÜSÜ
+    // (hlt kaldırıldı, böylece donanımsal kesme tablosu boş olsa bile donmaz)
     while (1) {
         if (inb(0x64) & 1) { 
             uint8_t scancode = inb(0x60);
             if (is_graphics_mode) {
                 setup_handle_input(scancode); 
                 if (!(scancode & 0x80)) {
-                    if (scancode == 0x1C) advance_os_stage();       // ENTER -> İleri
-                    else if (scancode == 0x0E) regress_os_stage();  // BACKSPACE -> Geri
+                    if (scancode == 0x1C) advance_os_stage();       // ENTER -> Aşama İleri
+                    else if (scancode == 0x0E) regress_os_stage();  // BACKSPACE -> Aşama Geri
                 }
             }
         }
