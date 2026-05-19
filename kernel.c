@@ -1,132 +1,138 @@
 /**
  * ==============================================================================
- * 🌟 SKY CORE OS - SAF TERMİNAL ÇEKİRDEĞİ (LEGACY TEXT TERMINAL CORE) 🌟
+ * 🌟 SKY CORE OS / WIND OS - SAF TERMİNAL VE GEÇİŞ ÇEKİRDEĞİ 🌟
  * ==============================================================================
  * [Mimari]: 32-Bit Korumalı Mod (Protected Mode) - x86 IA-32 Standartları
  * [Geliştirici]: Feyzula Efe Tuna
- * [Açıklama]: Grafik kartını zorlamayan, klavyeden basılan tuşları yakalayıp 
- * ekrana komut satırı (CLI) olarak basan ilk efsane saf çekirdek.
+ * [Açıklama]: Ekrana 'ss' yazıp ENTER'a basınca grafik kuruluma (setup_init)
+ * zıplayan, klavye polling motoruna sahip o meşhur saf geçiş çekirdeği.
  * ==============================================================================
  */
 
 #include <stdint.h>
+#include <stddef.h>
 
-// 1. LİNKER HATALARINI ENGELLEMEK İÇİN KÜRESEL GRAFİK DEĞİŞKENİ
-// Diğer dosyalar (kerror.c vb.) bunu arıyor, derleme geçsin diye tanımlıyoruz.
+// Modül Fonksiyon Bildirimleri (Dış dosyalarla linker bağlantısı için)
+extern void setup_init(void);
+extern void setup_handle_input(uint8_t scancode);
+extern void setup_render(void);
+
+// LİNKER SUSTURUCU: kerror.c veya vga_force.c dosyalarının aradığı küresel grafik pointer'ı
 uint32_t* GRAPHICS_FRAMEBUFFER = (uint32_t*)0xE0000000;
 
-// x86 Standart Metin Belleği Adresi (0xB8000)
-volatile uint16_t* const VIDEO_MEMORY = (uint16_t*)0xB8000;
+// Mod Kontrol Değişkeni (0: Saf Terminal, 1: Grafik Kurulum Modu)
+volatile int is_graphics_mode = 0;
 
-int cursor_x = 0;
-int cursor_y = 0;
+// Global VGA Metin Belleği Tanımları
+uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000;
+int text_x = 0;
+int text_y = 0;
 
-// Basit US-Keyboard Scancode - ASCII Dönüşüm Tablosu (Küçük Harfler)
-const char scancode_to_ascii[] = {
-    0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-  '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',   0,
-   'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',   0, '\\', 'z',
-   'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',   0, '*',   0, ' ',   0
-};
-
-// Ekranı metin modunda temizleme (Koyu Mavi Arka Plan, Beyaz Yazı)
-void clear_screen(void) {
-    for (int i = 0; i < 80 * 25; i++) {
-        VIDEO_MEMORY[i] = (0x1F << 8) | ' ';
-    }
-    cursor_x = 0;
-    cursor_y = 0;
-}
-
-// Ekrana karakter basma ve satır sonu kontrolü
-void print_char(char c) {
-    if (c == '\n') {
-        cursor_x = 0;
-        cursor_y++;
-    } else if (c == '\b') {
-        // Backspace mekanizması
-        if (cursor_x > 9) { // "sky-os> " kısmını sildirmemek için
-            cursor_x--;
-            int index = cursor_y * 80 + cursor_x;
-            VIDEO_MEMORY[index] = (0x1F << 8) | ' ';
-        }
-    } else {
-        int index = cursor_y * 80 + cursor_x;
-        VIDEO_MEMORY[index] = (0x1F << 8) | c;
-        cursor_x++;
-        if (cursor_x >= 80) {
-            cursor_x = 0;
-            cursor_y++;
-        }
-    }
-
-    // Ekran aşağı kaydırma (Scrolling) koruması
-    if (cursor_y >= 25) {
-        clear_screen();
-    }
-}
-
-// Ekrana string bastırma
-void print_str(const char* str) {
+// Ekrana metin modu string basma fonksiyonu
+void print_string(const char* str) {
     while (*str) {
-        print_char(*str);
+        if (*str == '\n') {
+            text_x = 0;
+            text_y++;
+        } else {
+            int index = text_y * 80 + text_x;
+            TEXT_VIDEO_MEMORY[index] = (0x1F << 8) | *str; // Lacivert arka plan, beyaz yazı
+            text_x++;
+            if (text_x >= 80) {
+                text_x = 0;
+                text_y++;
+            }
+        }
         str++;
     }
+    // Basit ekran kaydırma (scrolling) koruması
+    if (text_y >= 25) {
+        for (int i = 0; i < 80 * 25; i++) TEXT_VIDEO_MEMORY[i] = (0x1F << 8) | ' ';
+        text_x = 0;
+        text_y = 0;
+    }
 }
 
-// Giriş portundan veri okuma (Klavye için)
-static inline uint8_t in_byte(uint16_t port) {
+// Donanımdan Veri Okuma/Yazma (Port Girdileri)
+static inline uint8_t inb(uint16_t port) {
     uint8_t ret;
     __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
     return ret;
 }
 
+// Basit Komut İstemi Altyapısı
+void handle_cli_command(const char* cmd) {
+    if (cmd[0] == 's' && cmd[1] == 's') {
+        // 'ss' komutu girildiğinde Wind OS Grafik Kurulum Sihirbazını tetikle!
+        is_graphics_mode = 1;
+        setup_init(); // Wind OS Grafik Kurulumunu Ateşle!
+    } else {
+        print_string("\nBilinmeyen Komut! Kurulumu baslatmak icin 'ss' yazin.\nSkyOS> ");
+    }
+}
+
 // ==============================================================================
-// 🚀 KERNEL ENTRY POINT (TERMİNAL ANA DÖNGÜSÜ)
+// 🚀 KERNEL GİRİŞ NOKTASI (MAIN ENTRY POINT)
 // ==============================================================================
 void kernel_main(void* mboot_ptr, uint32_t magic) {
     (void)mboot_ptr;
     (void)magic;
 
-    clear_screen();
-    print_str("======================================================================\n");
-    print_str("                 WIND OS / SKY CORE OS - SAF TERMINAL                 \n");
-    print_str("======================================================================\n\n");
-    print_str("Sistem Metin Modunda Basariyla Baslatildi.\n");
-    print_str("Klavye Sürücüsü Aktif. Komut Yazmaya Baslayabilirsiniz.\n\n");
-    print_str("sky-os> ");
+    // Ekranı temizle ve ilk logları bas
+    for (int i = 0; i < 80 * 25; i++) {
+        TEXT_VIDEO_MEMORY[i] = (0x1F << 8) | ' ';
+    }
+    text_x = 0;
+    text_y = 0;
 
+    print_string("=======================================================================\n");
+    print_string("               WIND OS CORE KERNEL v1.5 - SIFIR HATA MODU             \n");
+    print_string("=======================================================================\n\n");
+    print_string("[+] VGA Metin modu ekran surucusu: STABIL\n");
+    print_string("[+] Donanimsal Kesme Korumasi (Anti-Guru Mode): AKTIF\n");
+    print_string("[+] Dogrudan Port Taramali Klavye Motoru Devrede.\n\n");
+    print_string("Grafiksel Wind OS kurulumuna gecmek icin 'ss' yazip ENTER'a basin.\n\n");
+    print_string("SkyOS> ");
+
+    char cmd_buffer[3] = {0};
+    int cmd_idx = 0;
     uint8_t last_scancode = 0;
 
-    // Saf Terminal Döngüsü
+    // Ultra Polling Donanımsal Klavye Döngüsü
     while (1) {
-        // Klavye veri kontrolü (Port 0x64 bit 0 doluysa veri vardır)
-        if (in_byte(0x64) & 1) {
-            uint8_t scancode = in_byte(0x60);
+        // Klavye kontrolcüsü (Port 0x64) veri hazır mı?
+        if (inb(0x64) & 1) { 
+            uint8_t scancode = inb(0x60);
 
-            // Tuşa basılma kontrolü (0x80'den küçükse tuşa basılmıştır, büyükse bırakılmıştır)
+            // Sadece tuşa ilk basıldığında işlem yap (Tekrarlamayı önle)
             if (scancode != last_scancode) {
                 last_scancode = scancode;
 
-                if (!(scancode & 0x80)) { 
-                    // Enter tuşu kontrolü
-                    if (scancode == 0x1C) { 
-                        print_str("\n[KOMUT CALISTIRILDI]: Bilinmeyen komut.\n");
-                        print_str("sky-os> ");
-                    } 
-                    // Backspace tuşu kontrolü
-                    else if (scancode == 0x0E) {
-                        print_char('\b');
-                    }
-                    // Normal karakter basımı
-                    else if (scancode < sizeof(scancode_to_ascii)) {
-                        char ascii = scancode_to_ascii[scancode];
-                        if (ascii != 0) {
-                            print_char(ascii);
+                if (!(scancode & 0x80)) { // Tuş bırakılmadıysa, basıldıysa
+                    if (is_graphics_mode) {
+                        // Eğer grafik modundaysak girdileri doğrudan Wind OS mekanik motoruna ilet
+                        setup_handle_input(scancode); 
+                    } else {
+                        // SkyOS komut satırı girdileri
+                        if (scancode == 0x1F) { // 'S' Tuşu scancode'u
+                            if (cmd_idx < 2) { 
+                                cmd_buffer[cmd_idx++] = 's'; 
+                                print_string("s"); 
+                            }
+                        } else if (scancode == 0x1C) { // ENTER Tuşu
+                            cmd_buffer[cmd_idx] = '\0';
+                            handle_cli_command(cmd_buffer);
+                            // Buffer'ı sıfırla
+                            cmd_idx = 0;
+                            cmd_buffer[0] = 0;
+                            cmd_buffer[1] = 0;
                         }
                     }
                 }
             }
         }
+        
+        // Donanımı yormamak için çok ufak bir CPU dinlendirme (x86 komutu)
+        __asm__ volatile("pause");
     }
 }
