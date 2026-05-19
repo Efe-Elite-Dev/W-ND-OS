@@ -14,10 +14,10 @@ jobs:
     - name: Repoyu Klonla
       uses: actions/checkout@v4
 
-    - name: Derleme Araçlarını Kur (GCC, NASM & BIOS Paketleri)
+    - name: Derleme Araçlarını Kur (GCC, NASM & Standart ISO Araçları)
       run: |
         sudo apt-get update
-        # i386-pc kütüphanesini zorunlu kılmak için grub-pc-bin paketini de ekliyoruz
+        # 2GB sınırımız olduğu için tüm grub kütüphanelerini (hem BIOS hem EFI altyapısını) eksiksiz kuruyoruz
         sudo apt-get install -y gcc-multilib g++-multilib nasm make lld binutils grub-common grub-pc-bin xorriso mtools
 
     - name: Çalıştırılabilir İzinleri Ver
@@ -26,7 +26,7 @@ jobs:
     - name: Çekirdeği Derle (Saf Terminal Modu)
       run: ./build.sh
 
-    - name: GRUB Temizliği ve 1MB Hedefli ISO Oluşturma
+    - name: Standart Full GRUB ISO Oluşturma
       run: |
         # ISO klasör yapısını hazırla
         mkdir -p iso_root/boot/grub
@@ -40,31 +40,28 @@ jobs:
           echo "HATA: kernel.bin bulunamadı!" && exit 1
         fi
         
-        # En minimal GRUB yapılandırması
+        # GRUB Yapılandırması
         cat << 'EOF' > iso_root/boot/grub/grub.cfg
         set timeout=0
         set default=0
-        menuentry "Sky Core OS" {
+        menuentry "Sky Core OS v1.5" {
             multiboot /boot/kernel.bin
             boot
         }
         EOF
         
-        # HATA DÜZELTİLDİ VE BOYUT KIRPILDI: 
-        # Mimariyi i386-pc (standart x86 BIOS) olarak kilitliyoruz.
-        # Sadece sistemi ayağa kaldıracak en kritik 3 modülü (multiboot, normal, ext2) bırakıyoruz.
-        # Geri kalan yüzlerce modül atıldığı için ISO boyutu radikal şekilde düşecek.
-        grub-mkrescue -d /usr/lib/grub/i386-pc --modules="multiboot normal ext2" -o skycore.iso iso_root
+        # 2GB alanımız var, modülleri kırpmıyoruz! Standart tam kurulum yapıyoruz.
+        # Bu sayede eksik modül hatası vermesi imkansız hale geliyor.
+        grub-mkrescue -o skycore.iso iso_root
         
-        # Nihai boyutu terminale yazdır
-        echo "=== NİHAİ SIKIŞTIRILMIŞ ISO BOYUTU ==="
+        echo "=== NİHAİ ISO BOYUTU ==="
         du -sh skycore.iso
 
     - name: Derleme Çıktılarını Arşivle (Artifact)
       if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: skycore-ultra-minimal-iso
+        name: skycore-vortex-tui-iso
         path: |
           skycore.iso
         if-no-files-found: error
