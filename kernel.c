@@ -4,7 +4,7 @@
  * ==============================================================================
  * [Mimari]: 32-Bit Korumalı Mod (Protected Mode) - x86 IA-32 Monolitik Standartları
  * [Geliştirici]: Feyzula Efe Tuna
- * [Açıklama]: UI bileşenleri içermeyen, sadece donanım ilklendirmesi yapan saf core.
+ * [Açıklama]: Çakışmalardan arındırılmış, dış alt sistemleri doğru bağlayan saf core.
  * ==============================================================================
  */
 
@@ -19,26 +19,27 @@
 // ==============================================================================
 // 🖥️ 1. DONANIM VE BELLEK ADRESLERİ KATMANI (MEMORY MAPPING)
 // ==============================================================================
-uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000; // x86 Standart Metin Belleği
+uint16_t* const TEXT_VIDEO_MEMORY = (uint16_t*)0xB8000; 
 int text_x = 0;
 int text_y = 0;
 
 // VirtualBox / QEMU için dinamik Linear Framebuffer adresi (Varsayılan: 0xE0000000)
 uint32_t* GRAPHICS_FRAMEBUFFER = (uint32_t*)0xE0000000;
 
-// Dışarıdan (assembly veya setup dosyalarından) gelecek fonksiyonlar
+// GERÇEK DIŞ FONKSİYONLAR (Extern Bildirimleri - Linker çakışmasını önler)
+extern void screen_init(void);
+extern void setup_init(void);
+extern void setup_handle_input(uint8_t scancode);
 extern void force_graphics_hardware(void);
 
-// Linker (Bağlayıcı) hatalarını engellemek için saf stub alt sistemler
+// Henüz diğer dosyalarda tanımlanmamış olabilecek alt sistemler için boş stublar
 void idt_init(void) {} 
 void keyboard_init(void) {}
 void mouse_init(void) {}
-void screen_init(void) {}
 void wind_subsystem_init(void) {}
 void exe_subsystem_init(void) {}
 void ai_subsystem_init(void) {}
 void deb_subsystem_init(void) {}
-void setup_init(void) {}
 
 // ==============================================================================
 // 🛠️ 2. SAF I/O PORTS VE METİN MODU LOG MOTORU
@@ -63,7 +64,7 @@ void print_string(const char* str) {
             text_x = 0;
             text_y++;
         } else {
-            TEXT_VIDEO_MEMORY[text_y * 80 + text_x] = (0x0E << 8) | *str; // Sarı renkli log metni
+            TEXT_VIDEO_MEMORY[text_y * 80 + text_x] = (0x0E << 8) | *str; 
             text_x++;
             if (text_x >= 80) { text_x = 0; text_y++; }
         }
@@ -97,7 +98,7 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
     // 2. Multiboot VBE standart kontrolü (Dinamik LFB Adres Alımı)
     if (magic == 0x2BADB002 && mboot_ptr != NULL) {
         uint32_t flags = *(uint32_t*)mboot_ptr;
-        if (flags & (1 << 11)) { // VBE info mevcut mu?
+        if (flags & (1 << 11)) { 
             uint32_t* vbe_mode_info = (uint32_t*)((uint8_t*)mboot_ptr + 72);
             uint32_t real_fb_address = *vbe_mode_info;
             if (real_fb_address != 0) {
@@ -109,18 +110,19 @@ void kernel_main(void* mboot_ptr, uint32_t magic) {
     print_string("Sky Core OS: Donanim baglamlari hazirlaniyor...\n");
     for (volatile int delay = 0; delay < 2000000; delay++) { __asm__ volatile("pause"); }
 
-    // Çekirdek alt sistemlerini çağır
+    // Gerçek dış dosyaların ilklendirme fonksiyonlarını çağırıyoruz
     screen_init();
     setup_init();
 
-    // 3. Grafik moduna geç ve arka planı boya (Saf çekirdeğin çalıştığının kanıtı)
+    // 3. Grafik moduna geç ve arka planı koyu maviye boya
     fill_screen(COLOR_DARK_BLUE);
 
-    // 4. Sonsuz Klavye Polling Döngüsü (Kesmesiz / hlt içermez, kilitlenmeyi önler)
+    // 4. Sonsuz Klavye Polling Döngüsü
     while (1) {
-        if (inb(0x64) & 1) { // Klavye tamponunda veri var mı?
-            uint8_t scancode = inb(0x60); // Scancode'u oku (İleride input işlemleri için hazır)
-            (void)scancode; 
+        if (inb(0x64) & 1) { 
+            uint8_t scancode = inb(0x60); 
+            // Girişleri setup_ui veya ana döngüye iletmek için hazır
+            setup_handle_input(scancode);
         }
     }
 }
