@@ -1,4 +1,4 @@
-name: Sky-Core-OS Auto-Release
+name: Sky-Core-OS Direct Build
 
 on:
   push:
@@ -19,21 +19,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nasm gcc-multilib
 
-      - name: Fix Makefile Tab Issue
+      - name: Build System (Direct Compilation)
         run: |
-          # Bu komut, Makefile içindeki boşlukları (8 boşluk) TAB ile değiştirir
-          sed -i 's/        /\t/g' Makefile
-
-      - name: Build OS
-        run: |
-          make clean
-          make all
+          # 1. Bootloader derle
+          nasm -f elf32 boot.asm -o boot.o
+          
+          # 2. Kernel ve diğer kaynak dosyalarını derle
+          # -m32: 32-bit mimari, -ffreestanding: standart kütüphanesiz derleme
+          gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
+          gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c gui.c -o gui.o
+          gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c mouse.c -o mouse.o
+          gcc -m32 -ffreestanding -O2 -Wall -Wextra -fno-pie -fno-stack-protector -c ai_subsystem.c -o ai_subsystem.o
+          
+          # 3. Linkleme işlemi (Objeleri birleştir)
+          ld -m elf_i386 -T linker.ld -o kernel.bin boot.o kernel.o gui.o mouse.o ai_subsystem.o
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             kernel.bin
-            windos.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
