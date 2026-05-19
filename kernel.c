@@ -1,62 +1,37 @@
 #include <stdint.h>
-#include <stddef.h>
 #include "sky_core.h"
 
-// Bellek adresleri (Global)
-uint32_t* FRAMEBUFFER = (uint32_t*)0xFD000000;
-int SCREEN_W = 1024;
-int SCREEN_H = 768;
+// Ekran boyutları (Sabit)
+#define SCREEN_W 1024
+#define SCREEN_H 768
 
-// Temel Grafik Motoru
-void draw_pixel(int x, int y, uint32_t color) {
-    if (x >= 0 && x < SCREEN_W && y >= 0 && y < SCREEN_H) {
-        FRAMEBUFFER[y * SCREEN_W + x] = color;
-    }
+// Modern kartın koordinatları
+#define CARD_W 600
+#define CARD_H 400
+#define CARD_X (SCREEN_W - CARD_W) / 2
+#define CARD_Y (SCREEN_H - CARD_H) / 2
+
+// Gölge çizimi için fonksiyon (Modern hava verir)
+void draw_shadow(int x, int y, int w, int h, int offset) {
+    draw_rect(x + offset, y + offset, w, h, 0x33000000); // Yarı saydam siyah
 }
 
-void draw_rect(int x, int y, int w, int h, uint32_t color) {
-    for (int i = y; i < y + h; i++) {
-        for (int j = x; j < x + w; j++) {
-            draw_pixel(j, i, color);
-        }
-    }
-}
-
-// O modern kart görünümü için yuvarlatılmış köşe algoritması
-void draw_rounded_rect(int x, int y, int w, int h, int radius, uint32_t color) {
-    for (int i = y; i < y + h; i++) {
-        for (int j = x; j < x + w; j++) {
-            // Basit bir köşe yuvarlama mantığı (kare içinde daire kontrolü)
-            if ((i < y + radius || i > y + h - radius - 1) && 
-                (j < x + radius || j > x + w - radius - 1)) continue; 
-            draw_pixel(j, i, color);
-        }
-    }
-}
-
-// Arayüz Çizimi
 void render_ui() {
-    // 1. Arka Plan (Sky Gradient)
+    // 1. Arka Plan: Modern Degrade (Gradient)
     for (int i = 0; i < SCREEN_H; i++) {
-        uint32_t color = (0xFF << 24) | ((240 - i/10) << 16) | ((244 - i/15) << 8) | (248 - i/20);
+        uint32_t r = 30 + (i / 10); // Hafif morumsu/mavi ton
+        uint32_t g = 30 + (i / 15);
+        uint32_t b = 60 + (i / 10);
+        uint32_t color = (0xFF << 24) | (r << 16) | (g << 8) | b;
         for (int j = 0; j < SCREEN_W; j++) draw_pixel(j, i, color);
     }
 
-    // 2. Ana OOBE Kartı (Ekranın ortasında)
-    draw_rounded_rect(200, 150, 624, 468, 20, 0xFFFFFFFF); // Beyaz modern kart
+    // 2. Kartın Gölgesi (Derinlik efekti)
+    draw_shadow(CARD_X, CARD_Y, CARD_W, CARD_H, 15);
 
-    // 3. Butonlar (Professional look)
-    draw_rounded_rect(250, 450, 150, 40, 10, 0xFF2575FC); // Mavi buton
-}
+    // 3. Ana Kart (Beyaz, yumuşak köşeli)
+    draw_rounded_rect(CARD_X, CARD_Y, CARD_W, CARD_H, 20, 0xFFFFFFFF);
 
-void kernel_main(void* mboot_ptr, uint32_t magic) {
-    // Grafik moduna geçişi garanti et
-    // Eğer Multiboot verisi gelmezse, manual olarak 0xFD000000 adresini kullanıyoruz
-    // VBE ayarlarının bootloader (grub.cfg) kısmında 'vbe mode 1024x768' olduğundan emin ol.
-    
-    render_ui();
-
-    while(1) {
-        __asm__ volatile("hlt");
-    }
+    // 4. Mavi Buton (Modern aksan)
+    draw_rounded_rect(CARD_X + 20, CARD_Y + 300, 140, 50, 10, 0xFF0078D7);
 }
