@@ -1,8 +1,6 @@
-#include "sky_core.h"
-#include <string.h> // strstr için
+#include "globals.h"
+#include "sky_loader.h"
 
-void sky_execute_file(char* filename) {
-    if (strstr(filename, ".exe")) {
-        // PE Loader
-    }
+void sky_execute_file(const char* filename) {
+    sky_handle_double_click(filename);
 }
