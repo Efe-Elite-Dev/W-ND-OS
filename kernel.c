@@ -1,5 +1,5 @@
 /*
- * Wind OS / Sky-Core-OS  -  kernel.c  (TAM SURUM - DONANIM VE DUZGUN BUFFER ENTEGRELİ)
+ * Wind OS / Sky-Core-OS  -  kernel.c  (TAM SURUM - KILITLENMEYEN SURUCU ENTEGRELİ)
  * 7 OOBE + Masaustu + Cekmece + Dosya Yoneticisi
  * PS/2 Klavye, PS/2 Mouse, PCI/USB
  *
@@ -104,7 +104,7 @@ static const u8 F8[128][8]={
 ['D']={0x1F,0x36,0x66,0x66,0x66,0x36,0x1F,0x00},
 ['E']={0x7F,0x46,0x16,0x1E,0x16,0x46,0x7F,0x00},
 ['F']={0x7F,0x46,0x16,0x1E,0x16,0x06,0x0F,0x00},
-['G']={0x3C,0x66,0x03,0x03,73,0x66,0x7C,0x00},
+['G']={0x3C,0x66,0x03,0x03,0x73,0x66,0x7C,0x00},
 ['H']={0x33,0x33,0x33,0x3F,0x33,0x33,0x33,0x00},
 ['I']={0x1E,0x0C,0x0C,0x0C,0x0C,0x0C,0x1E,0x00},
 ['J']={0x78,0x30,0x30,0x30,0x33,0x33,0x1E,0x00},
@@ -201,7 +201,7 @@ static void swap_buffers(void) {
 }
 
 /* ================================================================
-   PS/2 KLAVYE SÜRÜCÜSÜ (KİLİTLENMEYEN POLLING)
+   PS/2 KLAVYE SÜRÜCÜSÜ (KİLİTLENMEYEN GÜVENLİ POLLING)
    ================================================================ */
 static u8 k_shift=0,k_caps=0;
 static const char sc_normal[128]={
@@ -215,12 +215,10 @@ static const char sc_normal[128]={
 
 static u8 kbd_poll(void){
     u8 st = inb(0x64);
-    if(!(st & 0x01)) return 0; // Veri yoksa hemen çık
+    if(!(st & 0x01)) return 0;   // Okunacak veri yoksa hemen cik
+    if(st & 0x20) return 0;      // KRİTİK: Veri fareye aitse klavye okumasın, yutmasın!
     
-    // Eğer veri fareye aitse klavye fonksiyonu okumasın, yutmasın!
-    if(st & 0x20) return 0; 
-    
-    u8 sc = inb(0x60);
+    u8 sc = inb(0x60);           // Güvenle oku
     if(sc & 0x80){
         u8 r = sc & 0x7F;
         if(r == 0x2A || r == 0x36) k_shift = 0;
@@ -261,7 +259,7 @@ static u8 kbd_poll(void){
 }
 
 /* ================================================================
-   PS/2 MOUSE SÜRÜCÜSÜ (KİLİTLENMEYEN YAPILANDIRMA)
+   PS/2 MOUSE SÜRÜCÜSÜ (KİLİTLENMEYEN GÜVENLİ POLLING)
    ================================================================ */
 static i32 MX=512, MY=384;
 static u8  MB=0;
@@ -274,7 +272,7 @@ static void mouse_w(u8 b){ mouse_wait(1); outb(0x64,0xD4); mouse_wait(1); outb(0
 static u8 mouse_r(void){ mouse_wait(0); return inb(0x60); }
 
 static void mouse_init(void){
-    // İlk önce porttaki eski kalıntıları boşalt
+    // İlk önce porttaki eski kalıntıları tamamen boşalt
     while(inb(0x64) & 1) { inb(0x60); }
 
     mouse_wait(1); outb(0x64,0xA8); // Fare hattını aç
@@ -290,12 +288,10 @@ static void mouse_init(void){
 static void mouse_poll(void){
     while(1){
         u8 st = inb(0x64);
-        if(!(st & 0x01)) break; // Okunacak veri kalmadıysa çık
+        if(!(st & 0x01)) break;   // Okunacak veri kalmadıysa döngüden güvenle çık
+        if(!(st & 0x20)) break;   // KRİTİK: Veri klavyeye aitse fare okumasın, klavyeye bıraksın!
         
-        u8 dat = inb(0x60);
-        // EĞER VERİ FAREYE AİT DEĞİLSE (Klavyeyse) YUTMA, ÇIK!
-        if(!(st & 0x20)) { continue; } 
-        
+        u8 dat = inb(0x60);       // Güvenle oku
         static u8 p[3], pc=0;
         p[pc++]=dat;
         if(pc==3){
