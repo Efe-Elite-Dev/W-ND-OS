@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v10.5 Header Perfect (Çakışmalar Giderildi)
+ * Wind OS  -  kernel.c  v10.6 Xubuntu USB Style & 180-Degree 0-Lag Flip
  * Lead Developer: Efe (WindOS Team)
  */
 #include "kernel.h"
@@ -11,27 +11,28 @@ typedef int            i32;
 typedef signed char    i8;
 #define NULL ((void*)0)
 
-/* ÇAKIŞMA ÇÖZÜLDÜ: kernel.h içinde zaten tanımlı olduğu için typedef silindi, sadece değişken bırakıldı */
+typedef enum { STATE_DESKTOP } OS_State;
 static OS_State gST = STATE_DESKTOP;
 
 static volatile u32 *FB = (u32*)0;
 static u32 SW = 1024, SH = 768, SP = 1024;
 static u32 back_buffer[1024 * 768];
 
-/* RENK PALETI */
+/* RENK PALETI (Xubuntu Tarzı Koyu Tema) */
 #define CW       0xFFFFFFFFu 
 #define CK       0xFF000000u 
-#define BG_BASE  0xFF101214u 
-#define TASKBAR  0xDD181A1Fu 
-#define PAN_BG   0xFF202020u 
-#define PAN_BD   0xFF333333u 
-#define SIDEBAR  0xFF191919u 
+#define BG_BASE  0xFF2D2D2Du /* Xubuntu Koyu Gri Arka Plan */
+#define TASKBAR  0xFF1E1E1Eu 
+#define PAN_BG   0xFF353535u 
+#define PAN_BD   0xFF454545u 
+#define SIDEBAR  0xFF282828u 
 #define CTXT     0xFFE3E5E8u 
-#define CGY      0xFF99AAB5u 
+#define CGY      0xFFAAAAAAu 
 #define WIN_BLUE 0xFF0078D7u 
+#define XUB_BLU  0xFF3498DBu /* Xubuntu Mavi Vurgusu */
 #define COR      0xFFFFCA28u 
-#define CRD      0xFFED4245u 
-#define CGN      0xFF57F287u 
+#define CRD      0xFFE74C3Cu 
+#define CGN      0xFF2ECC71u 
 #define SHADOW   0xFF08090Au  
 #define LIN_ORG  0xFFE95420u  
 
@@ -85,9 +86,16 @@ static void dc(i32 x,i32 y,char ch,u32 fg,u32 bg,i32 sc){ if((u8)ch>=128) ch='?'
 static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){ while(*s){ if(*s=='\n'){x=0;y+=8*sc+2;} else{dc(x,y,*s,fg,bg,sc);x+=8*sc;} s++; } }
 static void dsc(i32 x,i32 y,i32 w,const char*s,u32 fg,u32 bg,i32 sc){ i32 tw=(i32)klen(s)*8*sc; if(tw<w) ds(x+(w-tw)/2,y,s,fg,bg,sc); else ds(x,y,s,fg,bg,sc); }
 
+/* ========================================================================= */
+/* EFSANEVİ 180 DERECE 0-LAG EKRAN ÇEVİRİCİ                                  */
+/* İşlemciyi yormadan tek boyutlu dizi ile ekranı mükemmel düzeltir!         */
+/* ========================================================================= */
 static void swap_buffers(void) { 
     u32 total = SW * SH; 
-    for(u32 i = 0; i < total; i++) FB[i] = back_buffer[i];
+    for(u32 i = 0; i < total; i++) {
+        /* total - 1 - i formülü ekranı hem dikey hem yatay 180 derece çevirir, ayna hatasını çözer! */
+        FB[i] = back_buffer[total - 1 - i]; 
+    }
 }
 
 /* KLAVYE & MOUSE DEGİSKENLERI VE FONKSIYONLARI */
@@ -129,7 +137,9 @@ static void mouse_poll(void){
                     if(MBF[0] & 0x10) dx |= (i32)0xFFFFFF00; 
                     if(MBF[0] & 0x20) dy |= (i32)0xFFFFFF00; 
 
-                    MX += dx; MY -= dy;
+                    /* EKRAN 180 DERECE DÖNDÜĞÜ İÇİN FAREYİ DE TERSİNE ÇEVİRİYORUZ Kİ FİZİKSEL OLARAK DOĞRU ÇALIŞSIN */
+                    MX -= dx; MY += dy;
+                    
                     if(MX < 0) MX = 0; 
                     if(MY < 0) MY = 0; 
                     if(MX >= (i32)SW) MX = (i32)SW - 1; 
@@ -147,7 +157,7 @@ static int HOV(i32 x,i32 y,i32 w,i32 h){ return MX>=x&&MX<x+w&&MY>=y&&MY<y+h; }
 static void CUR(void){ static const u8 cur[13][9]={ {1,0,0,0,0,0,0,0,0},{1,1,0,0,0,0,0,0,0},{1,2,1,0,0,0,0,0,0},{1,2,2,1,0,0,0,0,0},{1,2,2,2,1,0,0,0,0},{1,2,2,2,2,1,0,0,0},{1,2,2,2,2,2,1,0,0},{1,2,2,2,2,2,2,1,0},{1,2,2,2,2,2,2,2,1},{1,2,2,2,2,1,1,1,1},{1,2,2,1,2,2,1,0,0},{1,2,1,0,1,2,2,1,0},{1,1,0,0,1,2,2,1,0} }; for(int r=0;r<13;r++) for(int c=0;c<9;c++){ i32 px=MX+c, py=MY+r; if((u32)px>=SW||(u32)py>=SH) continue; if(cur[r][c]==1) pp(px,py,CW); else if(cur[r][c]==2) pp(px,py,CK); } }
 
 /* ========================================================================= */
-/* GERÇEK ATA PIO DİSK VE FAT32 OKUYUCUSU                                    */
+/* XUBUNTU TARZI OTOMATİK USB DİSK OKUYUCU (FAT32)                           */
 /* ========================================================================= */
 typedef struct { char n[16]; int is_dir; } FAT_File;
 static FAT_File fat32_files[32];
@@ -201,22 +211,23 @@ static void fat32_scan(void) {
         if(n>0) { kcpy(fat32_files[fat32_file_count].n, name); fat32_files[fat32_file_count].is_dir = (buf[i+11] & 0x10) ? 1 : 0; fat32_file_count++; if(fat32_file_count >= 16) break; }
     }
     
+    /* EGER USB BULUNUR AMA BOS ISE VEYA FAT32 DEGILSE, SISTEM BOS KALMASIN DIYE TEST VERILERI (Xubuntu Plug&Play simülasyonu) */
     if(fat32_file_count == 0) {
         DISK_READ_SUCCESS = 1;
         kcpy(fat32_files[0].n, "ChromeSetup.exe"); fat32_files[0].is_dir = 0;
         kcpy(fat32_files[1].n, "Araclar.deb");     fat32_files[1].is_dir = 0;
-        kcpy(fat32_files[2].n, "Kernel_Yedek");    fat32_files[2].is_dir = 1;
+        kcpy(fat32_files[2].n, "Yeni_Klasor");     fat32_files[2].is_dir = 1;
         fat32_file_count = 3;
     }
 }
 
 /* ========================================================================= */
-/* UYGULAMA MANTIĞI VE ARAYÜZ (WIN11 EXPLORER & TOP DRAWER)                  */
+/* UYGULAMA MANTIĞI VE ARAYÜZ (XUBUNTU TARZI DETAYLI DOSYA YÖNETİCİSİ)       */
 /* ========================================================================= */
 typedef struct{char n[20];int inst;u32 col;} App;
 static App AP[9]={ 
-    {"Dosyalar",1,COR}, {"Terminal",0,CGN}, {"Tarayici",0,0xFF03A9F4u}, 
-    {"Ayarlar",1,CGY}, {"Mesajlar",1,0xFF0078D4u}, {"Kamera",1,0xFFE91E63u}, 
+    {"Dosyalar",1,COR}, {"Terminal",0,CGN}, {"Tarayici",0,XUB_BLU}, 
+    {"Ayarlar",1,CGY}, {"Mesajlar",1,XUB_BLU}, {"Kamera",1,0xFFE91E63u}, 
     {"Harita",1,0xFFFF9800u}, {"Muzik",1,0xFF00BCD4u}, {"Sistem",1,0xFF8B008Bu} 
 };
 
@@ -233,13 +244,13 @@ static void DRAW_WINDOW(i32 x, i32 y, i32 w, i32 h, const char* title, u32 b_col
 
 static void FILEMGR(void){
     if(!FO) return; 
-    i32 fw=760, fh=520, fx=FX, fy=FY; 
+    i32 fw=800, fh=550, fx=FX, fy=FY; 
     
     if(!FD&&MLB&&!PMLB&&MY>=fy&&MY<fy+40&&MX>=fx&&MX<fx+fw-40){FD=1;FDX=MX-fx;FDY=MY-fy;}
     if(FD){ if(MLB){ FX=MX-FDX; FY=MY-FDY; if(FX<0)FX=0; if(FY<0)FY=0; if(FX>(i32)SW-fw)FX=(i32)SW-fw; if(FY>(i32)SH-fh)FY=(i32)SH-fh; } else FD=0; }
     
     rr(fx, fy, fw, fh, 8, PAN_BG); rb(fx, fy, fw, fh, PAN_BD, 1);
-    dsc(fx+15, fy+15, fw, "Dosya Gezgini - WindOS", CTXT, 0, 1);
+    dsc(fx+15, fy+15, fw, "Dosya Gezgini - Xubuntu Stil", CTXT, 0, 1);
     if(CLK(fx+fw-45, fy+5, 40, 30)) { FO=0; }
     fr(fx+fw-40, fy+10, 30, 20, HOV(fx+fw-40, fy+10, 30, 20) ? CRD : PAN_BG);
     ds(fx+fw-28, fy+16, "X", CW, 0, 1);
@@ -248,23 +259,25 @@ static void FILEMGR(void){
     rr(fx+15, fy+55, 35, 35, 4, PAN_BG); ds(fx+27, fy+68, "<", CTXT, 0, 1); 
     rr(fx+60, fy+55, 35, 35, 4, PAN_BG); ds(fx+72, fy+68, ">", CTXT, 0, 1); 
     rr(fx+110, fy+55, fw-130, 35, 4, PAN_BG);
-    ds(fx+125, fy+68, FU ? "> Bu Bilgisayar > USB Surucu (D:)" : "> Bu Bilgisayar > Yerel Disk (C:)", CW, 0, 1);
+    ds(fx+125, fy+68, FU ? "> Aygitlar > USB Bileseni (32 GB)" : "> Bilgisayar > Yerel Disk (C:)", CW, 0, 1);
 
     i32 sb=220; fr(fx, fy+101, sb, fh-101, SIDEBAR); fr(fx+sb, fy+101, 1, fh-101, CK); 
 
-    ds(fx+20, fy+120, "Hizli Erisim", CGY, 0, 1);
+    ds(fx+20, fy+120, "Yerel Ag", CGY, 0, 1);
     ds(fx+40, fy+145, "Masaustu", CTXT, 0, 1);
     ds(fx+40, fy+170, "Indirmeler", CTXT, 0, 1);
-    ds(fx+20, fy+220, "Bu Bilgisayar", CGY, 0, 1);
+    
+    ds(fx+20, fy+220, "Aygitlar", CGY, 0, 1);
 
     if(CLK(fx+15, fy+245, sb-30, 40)) { FU=0; }
     rr(fx+15, fy+245, sb-30, 40, 6, !FU ? PAN_BD : SIDEBAR);
-    ds(fx+30, fy+260, "Yerel Disk (C:)", CW, 0, 1);
+    ds(fx+30, fy+260, "Bilgisayar (C:)", CW, 0, 1);
 
+    /* XUBUNTU TARZI AYGIT BUTONU (Gri/Turuncu Tonlarda) */
     if(CLK(fx+15, fy+290, sb-30, 40)) { FU=1; fat32_scan(); }
     rr(fx+15, fy+290, sb-30, 40, 6, FU ? PAN_BD : SIDEBAR);
-    circ(fx+35, fy+310, 5, WIN_BLUE);
-    ds(fx+50, fy+305, "USB Surucu (D:)", CW, 0, 1);
+    fr(fx+25, fy+305, 14, 10, LIN_ORG); /* Ubuntu Turuncusu İkon */
+    ds(fx+45, fy+305, "USB Bileseni", CW, 0, 1);
 
     i32 cx2 = fx + sb + 20; i32 cy2 = fy + 120;
     
@@ -276,8 +289,8 @@ static void FILEMGR(void){
                 u32 bg = (FS==i) ? PAN_BD : PAN_BG;
                 rr(ex, ey, 90, 80, 4, bg);
 
-                if(fat32_files[i].is_dir){ fr(ex+25, ey+18, 18, 12, COR); rr(ex+15, ey+26, 60, 36, 4, COR); } 
-                else { rr(ex+33, ey+15, 24, 30, 2, CW); fr(ex+37, ey+35, 16, 2, WIN_BLUE); }
+                if(fat32_files[i].is_dir){ fr(ex+25, ey+18, 18, 12, XUB_BLU); rr(ex+15, ey+26, 60, 36, 4, XUB_BLU); } /* XFCE Mavi Klasorleri */
+                else { rr(ex+33, ey+15, 24, 30, 2, CW); fr(ex+37, ey+35, 16, 2, LIN_ORG); }
                 
                 dsc(ex, ey+70, 90, fat32_files[i].n, CTXT, 0, 1);
 
@@ -290,15 +303,15 @@ static void FILEMGR(void){
                 }
             }
         } else {
-            ds(cx2, cy2, "USB BAGLANTISI BEKLENIYOR VEYA FORMAT DESTEKLENMIYOR", CRD, 0, 1);
-            ds(cx2, cy2+25, "Lutfen VBox/QEMU ayarlarindan diski IDE olarak baglayin.", CGY, 0, 1);
+            ds(cx2, cy2, "USB BAGLANTISI BEKLENIYOR VEYA FORMAT UYUMSUZ", CRD, 0, 1);
+            ds(cx2, cy2+25, "Lutfen aygitinizi 'IDE Hard Disk' olarak takin.", CGY, 0, 1);
         }
     } else {
         char* l_names[] = {"Sistem", "Projeler", "Kullanicilar"};
         for(int i=0;i<3;i++){
             i32 ex = cx2 + (i%4)*120, ey = cy2 + (i/4)*110;
             rr(ex, ey, 90, 80, 4, PAN_BG);
-            fr(ex+25, ey+18, 18, 12, COR); rr(ex+15, ey+26, 60, 36, 4, COR);
+            fr(ex+25, ey+18, 18, 12, XUB_BLU); rr(ex+15, ey+26, 60, 36, 4, XUB_BLU);
             dsc(ex, ey+70, 90, l_names[i], CTXT, 0, 1);
         }
     }
@@ -311,7 +324,7 @@ static void TERMINAL(void) {
     if (TDrag) { if (MLB) { TY -= MY-MY; TX = MX - TDX; TY = MY - TDY; if(TX<0)TX=0; if(TY<0)TY=0; if(TX>SW-TW)TX=SW-TW; if(TY>SH-TH)TY=SH-TH; } else TDrag = 0; }
     DRAW_WINDOW(TX, TY, TW, TH, "Wind Terminal V2", CK);
     rr(TX+15, TY+50, TW-30, TH-65, 5, CK); 
-    ds(TX+25, TY+60, "> WindOS V10.5 - Perfect Build", CGN, 0, 1); 
+    ds(TX+25, TY+60, "> WindOS V10.6 - Xubuntu Explorer & Flip Fix Active", CGN, 0, 1); 
     if(CLK(TX+TW-45, TY+5, 40, 30)) TERM_OPEN = 0;
 }
 
