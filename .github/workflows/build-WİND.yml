@@ -1,41 +1,28 @@
-name: Build Wind OS ISO
+name: WindBrowser Hızlı Paketleyici (Ubuntu)
 
 on:
   push:
     branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
-  workflow_dispatch: # İstediğinde GitHub paneli üzerinden el ile de başlatabilmen için
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Repoyu Klonla
+    - name: Kodu Klonla
       uses: actions/checkout@v4
 
-    - name: Gerekli Derleme Araçlarını Kur
+    - name: WindOS Paketi Hazirla (.wind)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          nasm \
-          gcc-multilib \
-          binutils \
-          grub-common \
-          grub-pc-bin \
-          xorriso \
-          mtools
+        mkdir -p WindBrowser_WindOS
+        cp windbrowser.py WindBrowser_WindOS/
+        echo "AppName: WindBrowser" > WindBrowser_WindOS/manifest.txt
+        echo "Core: WindOS V7" >> WindBrowser_WindOS/manifest.txt
+        tar -czf WindBrowser.wind WindBrowser_WindOS
 
-    - name: build.sh Çalıştırılabilir Yap
-      run: chmod +x build.sh
-
-    - name: İşletim Sistemini Derle ve ISO Üret
-      run: ./build.sh
-
-    - name: Üretilen ISO Dosyasını Artifact Olarak Yükle
+    - name: Paketi Cikti Olarak Ver
       uses: actions/upload-artifact@v4
       with:
-        name: windos-iso-package
-        path: windos.iso
-        if-no-files-found: error
+        name: WindBrowser-Paketi
+        path: WindBrowser.wind
