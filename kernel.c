@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v9.6 True FAT32 File System Reader
+ * Wind OS  -  kernel.c  v9.7 True FAT32 Reader (Derleme Hatalari Giderildi)
  * Lead Developer: WindOS Team
  */
 #include "kernel.h"
@@ -16,8 +16,8 @@ static u32 SW = 1024, SH = 768, SP = 1024;
 static u32 back_buffer[1024 * 768];
 
 static OS_State gST = STATE_DESKTOP;
-static OS_State pST = STATE_DESKTOP;
 
+/* RENK PALETI - EKSIK RENKLER EKLENDI */
 #define CW       0xFFFFFFFFu 
 #define CK       0xFF000000u 
 #define BG_BASE  0xFF101214u 
@@ -31,6 +31,8 @@ static OS_State pST = STATE_DESKTOP;
 #define COR      0xFFFFCA28u 
 #define CRD      0xFFED4245u 
 #define CGN      0xFF57F287u 
+#define SHADOW   0xFF08090Au  /* Hata Veren Golge Rengi eklendi */
+#define LIN_ORG  0xFFE95420u  /* Hata Veren Linux Rengi eklendi */
 
 /* I/O PORTLARI */
 static inline u8   inb (u16 p)       {u8  v;__asm__ volatile("inb  %1,%0":"=a"(v):"Nd"(p));return v;}
@@ -40,13 +42,12 @@ static inline void outw(u16 p, u16 v){__asm__ volatile("outw %0,%1"::"a"(v),"Nd"
 static inline u32  inl (u16 p)       {u32 v;__asm__ volatile("inl  %1,%0":"=a"(v):"Nd"(p));return v;}
 static inline void outl(u16 p, u32 v){__asm__ volatile("outl %0,%1"::"a"(v),"Nd"(p));}
 
-static void *mcpy(void *d,const void *s,u32 n){ u8*dp=(u8*)d;const u8*sp=(const u8*)s;while(n--)*dp++=*sp++;return d; }
 static u32 klen(const char *s){u32 n=0;while(s[n])n++;return n;}
 static void kcpy(char *d,const char *s){while(*s)*d++=*s++;*d=0;}
 
-/* V9.6: Uzantı algılayıcı artık BÜYÜK/küçük harf duyarsız (FAT32 dosyaları BÜYÜK kaydeder) */
+/* UZANTI ALGILAYICI (Büyük/Küçük Harf Duyarsiz) */
 static int is_ext(const char *n, const char *ext) {
-    int nl = klen(n), el = klen(ext);
+    int nl = (int)klen(n), el = (int)klen(ext);
     if(nl <= el) return 0;
     for(int i=0; i<el; i++) {
         char c1 = n[nl-el+i]; char c2 = ext[i];
@@ -98,11 +99,15 @@ static void m_write(u8 v){m_cmd_wait();outb(0x64,0xD4);m_cmd_wait();outb(0x60,v)
 static u8   m_read (void){m_dat_wait();return inb(0x60);}
 static void mouse_init(void){ m_cmd_wait(); outb(0x64,0xA8); m_cmd_wait(); outb(0x64,0x20); m_dat_wait(); u8 cfg=inb(0x60); cfg|=0x02; cfg&=~0x20; m_cmd_wait(); outb(0x64,0x60); m_cmd_wait(); outb(0x60,cfg); m_write(0xFF); m_read(); m_read(); m_read(); m_write(0xF6); m_read(); m_write(0xF4); m_read(); MOUSE_READY=1; }
 static void mouse_poll(void){ if(!MOUSE_READY) return; for(int iter=0;iter<16;iter++){ u8 st=inb(0x64); if(!(st&0x01)) break; if(!(st&0x20)){ inb(0x60); continue; } u8 dat=inb(0x60); switch(MCY){ case 0: if(!(dat&0x08)){MCY=0;break;} MBF[0]=(i8)dat; MCY=1; break; case 1: MBF[1]=(i8)dat; MCY=2; break; case 2: MBF[2]=(i8)dat; MCY=0;{ i32 dx=(i32)MBF[1]; i32 dy=(i32)MBF[2]; if(MBF[0]&0x10) dx|=(i32)0xFFFFFF00; if(MBF[0]&0x20) dy|=(i32)0xFFFFFF00; MX+=dx; MY-=dy; if(MX<0) MX=0; if(MY<0) MY=0; if(MX>=(i32)SW) MX=(i32)SW-1; if(MY>=(i32)SH) MY=(i32)SH-1; PMLB=MLB; MLB=(MBF[0]&0x01)?1:0; MRB=(MBF[0]&0x02)?1:0; } break; } } }
+
+/* TIKLAMA VE ÜZERİNE GELME (HOV Hatasi Düzeltildi) */
 static int CLK(i32 x,i32 y,i32 w,i32 h){ return MLB&&!PMLB&&MX>=x&&MX<x+w&&MY>=y&&MY<y+h; }
+static int HOV(i32 x,i32 y,i32 w,i32 h){ return MX>=x&&MX<x+w&&MY>=y&&MY<y+h; }
+
 static void CUR(void){ static const u8 cur[13][9]={ {1,0,0,0,0,0,0,0,0},{1,1,0,0,0,0,0,0,0},{1,2,1,0,0,0,0,0,0},{1,2,2,1,0,0,0,0,0},{1,2,2,2,1,0,0,0,0},{1,2,2,2,2,1,0,0,0},{1,2,2,2,2,2,1,0,0},{1,2,2,2,2,2,2,1,0},{1,2,2,2,2,2,2,2,1},{1,2,2,2,2,1,1,1,1},{1,2,2,1,2,2,1,0,0},{1,2,1,0,1,2,2,1,0},{1,1,0,0,1,2,2,1,0} }; for(int r=0;r<13;r++) for(int c=0;c<9;c++){ i32 px=MX+c, py=MY+r; if((u32)px>=SW||(u32)py>=SH) continue; if(cur[r][c]==1) pp(px,py,CW); else if(cur[r][c]==2) pp(px,py,CK); } }
 
 /* ========================================================================= */
-/* V9.6 GERÇEK ATA PIO DİSK OKUYUCU & FAT32 DOSYA SİSTEMİ MOTORU             */
+/* V9.7 GERÇEK ATA PIO DİSK OKUYUCU & FAT32 DOSYA SİSTEMİ MOTORU             */
 /* ========================================================================= */
 typedef struct { char n[15]; int is_dir; } FAT_File;
 static FAT_File fat32_files[16];
@@ -112,14 +117,14 @@ static int DISK_READ_SUCCESS = 0;
 static int ata_read_sector(u32 lba, u8* buffer) {
     u32 timeout = 100000;
     while((inb(0x1F7) & 0x80) && timeout) timeout--;
-    if(!timeout) return 0; /* Disk yok! */
+    if(!timeout) return 0; 
     
-    outb(0x1F6, 0xE0 | ((lba >> 24) & 0x0F)); /* Master Drive, LBA Modu */
-    outb(0x1F2, 1);                           /* 1 Sektor Oku */
+    outb(0x1F6, 0xE0 | ((lba >> 24) & 0x0F)); 
+    outb(0x1F2, 1);                           
     outb(0x1F3, (u8) lba);
     outb(0x1F4, (u8)(lba >> 8));
     outb(0x1F5, (u8)(lba >> 16));
-    outb(0x1F7, 0x20);                        /* READ KOMUTU */
+    outb(0x1F7, 0x20);                        
     
     timeout = 100000;
     while(!(inb(0x1F7) & 0x08) && timeout) timeout--;
@@ -138,40 +143,34 @@ static void fat32_scan(void) {
     DISK_READ_SUCCESS = 0;
     u8 buf[512];
     
-    /* 1. Sektör 0'ı oku (MBR veya doğrudan VBR olabilir) */
     if(!ata_read_sector(0, buf)) return;
-    if(buf[510] != 0x55 || buf[511] != 0xAA) return; /* Boot imzasi yok */
+    if(buf[510] != 0x55 || buf[511] != 0xAA) return; 
     
     u32 part_lba = 0;
-    /* Eger FAT Jump kodu yoksa, bu bir MBR'dir. 1. Partition LBA'sini al */
     if(buf[0] != 0xEB && buf[0] != 0xE9) { 
         part_lba = *(u32*)(&buf[0x1BE + 8]); 
         if(!ata_read_sector(part_lba, buf)) return;
         if(buf[510] != 0x55 || buf[511] != 0xAA) return;
     }
     
-    /* 2. FAT32 Boot Sector (VBR) Parametrelerini Çözümle */
     u16 rsvd_sec_cnt = *(u16*)(&buf[14]);
     u8 num_fats = buf[16];
     u32 fat_size = *(u32*)(&buf[36]);
-    if(fat_size == 0) fat_size = *(u16*)(&buf[22]); /* FAT16 Fallback */
+    if(fat_size == 0) fat_size = *(u16*)(&buf[22]); 
     
-    /* 3. Kök Dizinin (Root Directory) Fiziksel Adresini Hesapla */
     u32 root_dir_lba = part_lba + rsvd_sec_cnt + (num_fats * fat_size);
     if(!ata_read_sector(root_dir_lba, buf)) return;
     
-    DISK_READ_SUCCESS = 1; /* Tebrikler! FAT32'ye giris yapildi! */
+    DISK_READ_SUCCESS = 1; 
     
-    /* 4. Klasor yapisini ayikla (32 bytelik Entry'ler) */
     for(int i=0; i<512; i+=32) {
-        if(buf[i] == 0x00) break; /* Dizin sonu */
-        if((u8)buf[i] == 0xE5) continue; /* Silinmis dosya */
-        if(buf[i+11] == 0x0F) continue; /* Uzun Dosya Ismi (LFN) - Atla */
+        if(buf[i] == 0x00) break; 
+        if((u8)buf[i] == 0xE5) continue; 
+        if(buf[i+11] == 0x0F) continue; 
         
         char name[16]; int n=0;
         for(int j=0; j<8; j++) if(buf[i+j] != ' ') name[n++] = buf[i+j];
         
-        /* Uzantiyi al (Eger klasor degilse) */
         if(buf[i+8] != ' ' && !(buf[i+11] & 0x10)) {
             name[n++] = '.';
             for(int j=8; j<11; j++) if(buf[i+j] != ' ') name[n++] = buf[i+j];
@@ -182,7 +181,7 @@ static void fat32_scan(void) {
             kcpy(fat32_files[fat32_file_count].n, name);
             fat32_files[fat32_file_count].is_dir = (buf[i+11] & 0x10) ? 1 : 0;
             fat32_file_count++;
-            if(fat32_file_count >= 16) break; /* Ekrana sigacak kadarini al */
+            if(fat32_file_count >= 16) break; 
         }
     }
 }
@@ -197,6 +196,14 @@ static int FO=0, FU=0, FS=-1;
 static i32 FX=100, FY=80, FD=0, FDX=0, FDY=0;
 static int INSTALLING=0, INSTALL_PROG=0; 
 static int TERM_OPEN=0;
+/* TERMINAL DEGISKENLERI (Hatasi Duzeltildi) */
+static int TX=450, TY=150, TDrag=0, TDX=0, TDY=0;
+
+/* PENCERE CIZIM MOTORU YUKARI TASINDI (Hata Duzeltildi) */
+static void DRAW_WINDOW(i32 x, i32 y, i32 w, i32 h, const char* title, u32 b_col) {
+    rr(x, y, w, h, 8, b_col); rb(x, y, w, h, PAN_BD, 1);
+    fr(x, y+35, w, 1, PAN_BD); dsc(x+40, y+15, w-80, title, CTXT, 0, 1);
+}
 
 static void FILEMGR(void){
     if(!FO) return; 
@@ -207,8 +214,8 @@ static void FILEMGR(void){
     
     rr(fx, fy, fw, fh, 8, PAN_BG); rb(fx, fy, fw, fh, PAN_BD, 1);
     
-    dsc(fx+15, fy+15, fw, "Dosya Gezgini - WindOS V9.6 (Real FAT32)", CTXT, 0, 1);
-    if(CLK(fx+fw-45, fy+5, 40, 30)) FO=0;
+    dsc(fx+15, fy+15, fw, "Dosya Gezgini - WindOS V9.7 (Real FAT32)", CTXT, 0, 1);
+    if(CLK(fx+fw-45, fy+5, 40, 30)) { FO=0; }
     fr(fx+fw-40, fy+10, 30, 20, HOV(fx+fw-40, fy+10, 30, 20) ? CRD : PAN_BG);
     ds(fx+fw-28, fy+16, "X", CW, 0, 1);
 
@@ -225,14 +232,13 @@ static void FILEMGR(void){
     ds(fx+40, fy+170, "Indirmeler", CTXT, 0, 1);
     ds(fx+20, fy+220, "Bu Bilgisayar", CGY, 0, 1);
 
-    if(CLK(fx+15, fy+245, sb-30, 40)) FU=0; 
+    if(CLK(fx+15, fy+245, sb-30, 40)) { FU=0; }
     rr(fx+15, fy+245, sb-30, 40, 6, !FU ? PAN_BD : SIDEBAR);
     ds(fx+30, fy+260, "Yerel Disk (C:)", CW, 0, 1);
 
-    /* GERÇEK DİSK OKUMAYI TETİKLEYEN BUTON */
     if(CLK(fx+15, fy+290, sb-30, 40)) { 
         FU=1; 
-        fat32_scan(); /* Çekirdek donanıma iner ve FAT32 diskini tarar! */
+        fat32_scan(); 
     }
     rr(fx+15, fy+290, sb-30, 40, 6, FU ? PAN_BD : SIDEBAR);
     circ(fx+35, fy+310, 5, WIN_BLUE);
@@ -242,7 +248,6 @@ static void FILEMGR(void){
     
     if (FU) {
         if (DISK_READ_SUCCESS) {
-            /* USB İÇİNDEKİ GERÇEK DOSYALARI DİNAMİK OLARAK ÇİZ! */
             for(int i=0; i < fat32_file_count; i++){
                 i32 ex = cx2 + (i%4)*120, ey = cy2 + (i/4)*110;
                 if(ex+90 > fx+fw || ey+90 > fy+fh) continue;
@@ -250,12 +255,11 @@ static void FILEMGR(void){
                 rr(ex, ey, 90, 80, 4, bg);
 
                 if(fat32_files[i].is_dir){ 
-                    fr(ex+25, ey+18, 18, 12, COR); rr(ex+15, ey+26, 60, 36, 4, COR); /* Klasör */
+                    fr(ex+25, ey+18, 18, 12, COR); rr(ex+15, ey+26, 60, 36, 4, COR);
                 } else { 
-                    rr(ex+33, ey+15, 24, 30, 2, CW); fr(ex+37, ey+35, 16, 2, WIN_BLUE); /* Dosya */
+                    rr(ex+33, ey+15, 24, 30, 2, CW); fr(ex+37, ey+35, 16, 2, WIN_BLUE); 
                 }
                 
-                /* Gerçek Dosya İsmi! */
                 dsc(ex, ey+70, 90, fat32_files[i].n, CTXT, 0, 1);
 
                 if(CLK(ex,ey,90,80)){
@@ -266,7 +270,7 @@ static void FILEMGR(void){
                     if(isDeb && !AP[2].inst) { INSTALLING = 2; INSTALL_PROG = 0; }
                 }
             }
-            if(fat32_file_count == 0) ds(cx2, cy2, "USB Sürücüsü Boş veya Klasör Bulunamadı.", CGY, 0, 1);
+            if(fat32_file_count == 0) ds(cx2, cy2, "USB Surucusu Bos veya Klasor Bulunamadi.", CGY, 0, 1);
         } else {
             ds(cx2, cy2, "USB BAGLANTISI BEKLENIYOR...", CRD, 0, 1);
             ds(cx2, cy2+25, "VirtualBox/VMware ayarlarindan (Storage/Depolama) USB'nizi", CGY, 0, 1);
@@ -274,7 +278,6 @@ static void FILEMGR(void){
             ds(cx2, cy2+55, "WindOS Cekirdegi yalnizca ATA PIO portlarini taramaktadir.", CGY, 0, 1);
         }
     } else {
-        /* C SÜRÜCÜSÜ (Sahte Sabit Klasörler) */
         char* l_names[] = {"Sistem", "Projeler", "Kullanicilar"};
         for(int i=0;i<3;i++){
             i32 ex = cx2 + (i%4)*120, ey = cy2 + (i/4)*110;
@@ -286,25 +289,45 @@ static void FILEMGR(void){
 }
 
 static void BTN_V8(i32 x, i32 y, i32 w, i32 h, const char* lbl, u32 col, int active) {
-    rr(x, y, w, h, 8, PAN_BG); rb(x, y, w, h, PAN_BD, 1); fr(x + w/2 - 15, y + 15, 30, 20, col); 
-    if(active) fr(x, y+h-4, w, 4, WIN_BLUE); dsc(x, y + 45, w, lbl, CTXT, 0, 1);
+    rr(x, y, w, h, 8, PAN_BG); 
+    rb(x, y, w, h, PAN_BD, 1); 
+    fr(x + w/2 - 15, y + 15, 30, 20, col); 
+    if(active) { fr(x, y+h-4, w, 4, WIN_BLUE); } /* Indentation Düzeltildi */
+    dsc(x, y + 45, w, lbl, CTXT, 0, 1);
 }
 
 static void TERMINAL(void) {
-    if(!TERM_OPEN) return; i32 TW=550, TH=380;
+    if(!TERM_OPEN) return; 
+    
+    i32 TW=550, TH=380;
+    if (!TDrag && MLB && !PMLB && MY >= TY && MY < TY + 35 && MX >= TX && MX < TX + TW-40) { TDrag = 1; TDX = MX - TX; TDY = MY - TY; }
+    if (TDrag) { if (MLB) { TY -= MY-MY; TX = MX - TDX; TY = MY - TDY; if(TX<0)TX=0; if(TY<0)TY=0; if(TX>SW-TW)TX=SW-TW; if(TY>SH-TH)TY=SH-TH; } else TDrag = 0; }
+    
     DRAW_WINDOW(TX, TY, TW, TH, "Wind Terminal V2 (Root)", CK);
     rr(TX+15, TY+50, TW-30, TH-65, 5, CK); 
-    ds(TX+25, TY+60, "> WindOS V9.6 - FAT32 Engine Ready", CGN, 0, 1); 
-}
-static void DRAW_WINDOW(i32 x, i32 y, i32 w, i32 h, const char* title, u32 b_col) {
-    rr(x, y, w, h, 8, b_col); rb(x, y, w, h, PAN_BD, 1);
-    fr(x, y+35, w, 1, PAN_BD); dsc(x+40, y+15, w-80, title, CTXT, 0, 1);
+    ds(TX+25, TY+60, "> WindOS V9.7 - FAT32 Engine Ready", CGN, 0, 1); 
 }
 
 static void DESKTOP(void){
     fr(0, 0, (i32)SW, (i32)SH, BG_BASE);
-    fr(0, SH-45, SW, 45, TASKBAR); fr(0, SH-45, SW, 1, CK); rr(15, SH-38, 30, 30, 6, WIN_BLUE); ds(SW-130, SH-28, "03:56 PM", CTXT, 0, 1);
-    if(CLK(30,30,80,70)) FO=!FO; rr(30, 30, 80, 70, 8, PAN_BG); rb(30, 30, 80, 70, PAN_BD, 1); fr(55, 45, 14, 10, COR); rr(45, 52, 50, 30, 4, COR); dsc(30, 85, 80, "Dosyalar", CTXT, 0, 1);
+    fr(0, SH-45, SW, 45, TASKBAR); fr(0, SH-45, SW, 1, CK); 
+    rr(15, SH-38, 30, 30, 6, WIN_BLUE); ds(SW-130, SH-28, "03:56 PM", CTXT, 0, 1);
+    
+    if(CLK(30,30,80,70)) { FO=!FO; } /* Indentation Düzeltildi */
+    rr(30, 30, 80, 70, 8, PAN_BG); rb(30, 30, 80, 70, PAN_BD, 1); fr(55, 45, 14, 10, COR); rr(45, 52, 50, 30, 4, COR); dsc(30, 85, 80, "Dosyalar", CTXT, 0, 1);
+    
+    /* Geliştirici Kısa Yolları Masaüstüne Geri Eklendi */
+    if(CLK(30,120,80,70)) {}
+    BTN_V8(30, 120, 80, 70, " Ayarlar", CGY, 0);
+    
+    if(AP[2].inst) {
+        if(CLK(30,210,80,70)) { TERM_OPEN=!TERM_OPEN; }
+        BTN_V8(30, 210, 80, 70, "Terminal", CGN, TERM_OPEN);
+    }
+    if(AP[6].inst) {
+        BTN_V8(30, 300, 80, 70, "Tarayici", AP[6].col, 0);
+    }
+
     FILEMGR(); TERMINAL();
     
     if(INSTALLING) {
@@ -314,7 +337,11 @@ static void DESKTOP(void){
         ds(px+20, py+50, INSTALLING==1 ? "Yazilim Kuruluyor..." : "Gelistirici Araclari Aciliyor...", CW, 0, 1);
         rr(px+30, py+90, 300, 20, 5, CK); rr(px+30, py+90, INSTALL_PROG * 3, 20, 5, CW); 
         INSTALL_PROG += 1;
-        if(INSTALL_PROG >= 100) { if(INSTALLING == 1) AP[6].inst = 1; if(INSTALLING == 2) AP[2].inst = 1; INSTALLING = 0; }
+        if(INSTALL_PROG >= 100) { 
+            if(INSTALLING == 1) { AP[6].inst = 1; } 
+            if(INSTALLING == 2) { AP[2].inst = 1; } 
+            INSTALLING = 0; 
+        }
     }
 }
 
