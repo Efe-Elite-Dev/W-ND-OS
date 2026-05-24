@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v12.5 High-Quality Masterpiece (Universal Installer & AI)
+ * Wind OS  -  kernel.c  v12.6 The Absolute Zero-Error (Memcpy Polyfill)
  * Lead Developer: Efe (WindOS Team)
  */
 #include "kernel.h"
@@ -19,7 +19,7 @@ static int GLASS_MODE = 0;
 static int DRAW_GLASS = 0;  
 static u32 SYS_RAM_MB = 0;
 
-/* EKSİK RENKLER EKLENDİ VE PALET GENİŞLETİLDİ */
+/* RENK PALETI */
 #define CW       0xFFFFFFFFu 
 #define CK       0xFF000000u 
 #define BG_BASE  0xFF0F1419u 
@@ -34,16 +34,26 @@ static u32 SYS_RAM_MB = 0;
 #define CHR_GRN  0xFF2ECC71u 
 #define COR      0xFFFFCA28u 
 #define CRD      0xFFE74C3Cu 
-#define CGN      0xFF2ECC71u /* EKSİK RENK EKLENDİ */
-#define XUB_BLU  0xFF3498DBu /* EKSİK RENK EKLENDİ */
+#define CGN      0xFF2ECC71u 
+#define XUB_BLU  0xFF3498DBu 
 #define SHADOW   0xFF08090Au  
 #define LIN_ORG  0xFFE95420u  
 #define SAFE_BLK 0xFF0A0A0Au
-#define AND_GRN  0xFF3DDC84u /* Android APK Rengi */
+#define AND_GRN  0xFF3DDC84u 
 
 /* I/O PORTLARI */
 static inline u8   inb (u16 p)       {u8  v;__asm__ volatile("inb  %1,%0":"=a"(v):"Nd"(p));return v;}
 static inline void outb(u16 p, u8 v) {__asm__ volatile("outb %0,%1"::"a"(v),"Nd"(p));}
+
+/* ========================================================================= */
+/* OSDev ZORUNLU KÜTÜPHANELERİ (LINKER HATASINI ÇÖZEN KISIM)                 */
+/* ========================================================================= */
+void* memcpy(void* dest, const void* src, u32 n) {
+    u8* d = (u8*)dest;
+    const u8* s = (const u8*)src;
+    while (n--) *d++ = *s++;
+    return dest;
+}
 
 static u32 klen(const char *s){u32 n=0;while(s[n])n++;return n;}
 static void kcpy(char *d,const char *s){while(*s)*d++=*s++;*d=0;}
@@ -57,7 +67,6 @@ static void itoa(int n, char s[]) {
     for(int j=0, k=i-1; j<k; j++, k--) { char temp = s[j]; s[j] = s[k]; s[k] = temp; }
 }
 
-/* EVRENSEL UZANTI ALGILAYICI */
 static int is_ext(const char *n, const char *ext) {
     int nl = (int)klen(n), el = (int)klen(ext);
     if(nl <= el) return 0;
@@ -107,9 +116,9 @@ static void dc(i32 x,i32 y,char ch,u32 fg,u32 bg,i32 sc){ if((u8)ch>=128) ch='?'
 static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){ while(*s){ if(*s=='\n'){x=0;y+=8*sc+2;} else{dc(x,y,*s,fg,bg,sc);x+=8*sc;} s++; } }
 static void dsc(i32 x,i32 y,i32 w,const char*s,u32 fg,u32 bg,i32 sc){ i32 tw=(i32)klen(s)*8*sc; if(tw<w) ds(x+(w-tw)/2,y,s,fg,bg,sc); else ds(x,y,s,fg,bg,sc); }
 
-/* BÜTÜN MATEMATİKSEL ÇEVİRMELER SİLİNDİ - %100 SAF VE DÜZ ÇİZİM */
 static void swap_buffers(void) { 
-    __builtin_memcpy((void*)FB, (void*)back_buffer, SW * SH * 4);
+    /* YENİ MEMCPY KULLANILIYOR! LINKER (LD) ARTIK HATA VERMEYECEK */
+    memcpy((void*)FB, (void*)back_buffer, SW * SH * 4);
 }
 
 /* KLAVYE & MOUSE */
@@ -157,10 +166,7 @@ static void mouse_poll(void){
                     i32 dx = (i32)MBF[1]; i32 dy = (i32)MBF[2]; 
                     if(MBF[0] & 0x10) dx |= (i32)0xFFFFFF00; 
                     if(MBF[0] & 0x20) dy |= (i32)0xFFFFFF00; 
-                    
-                    /* TERS ÇEVİRME KODU SİLİNDİ, FİZİKSEL STANDART EKLENDİ */
                     MX += dx; MY -= dy; 
-                    
                     if(MX < 0) MX = 0; 
                     if(MY < 0) MY = 0; 
                     if(MX >= (i32)SW) MX = (i32)SW - 1; 
@@ -230,7 +236,7 @@ static void SYSTEM_APP(void) {
     DRAW_WINDOW(250, 150, 500, 350, "Sistem Bilgisi - Donanim Analizi", PAN_BG);
     if(CLK(250+500-35, 150+8, 25, 20)) SYS_OPEN=0;
     
-    ds(280, 210, "Isletim Sistemi: WindOS V12.5 High Quality", WIN_BLUE, 0, 1);
+    ds(280, 210, "Isletim Sistemi: WindOS V12.6 Masterpiece", WIN_BLUE, 0, 1);
     ds(280, 240, "Mimari: x86 (32-bit) Saf C Cekirdegi", CTXT, 0, 1);
     
     char buf[64];
@@ -270,7 +276,7 @@ static void WINDNOT_APP(void) {
     if(CLK(300+400-35, 200+8, 25, 20)) NOTEPAD_OPEN=0;
     
     DRAW_GLASS = 1; fr(310, 250, 380, 240, CW); DRAW_GLASS = 0;
-    ds(320, 260, "Sistem Notlari:\n\n- Yazilarin carpikligi kokuyle cozuldu.\n- WPK, EXE, APK, DEB Yukleyici Aktif.\n- 2GB ISO / Hafiza destegi onaylandi.\n- Yapay Zeka her uygulamaya baglandi.\n- LGS oncesi efsane bir sistem oldu.", CK, 0, 1);
+    ds(320, 260, "Sistem Notlari:\n\n- Yazilarin carpikligi kokuyle cozuldu.\n- WPK, EXE, APK, DEB Yukleyici Aktif.\n- Linker hatasi -O2 memcpy yazilarak asildi.\n- Yapay Zeka her uygulamaya baglandi.\n- LGS oncesi efsane bir sistem oldu.", CK, 0, 1);
 }
 
 static void FILEMGR(void){
@@ -418,7 +424,7 @@ static void DESKTOP(void){
     }
     
     DRAW_GLASS = 1; fr(0, 0, SW, 25, CK); DRAW_GLASS = 0;
-    ds(15, 8, "WindOS V12.5 High Quality", CTXT, 0, 1);
+    ds(15, 8, "WindOS V12.6 The Absolute Zero-Error", CTXT, 0, 1);
     
     char top_buf[64];
     kcpy(top_buf, "[T] Seffaf Mod | RAM: ");
