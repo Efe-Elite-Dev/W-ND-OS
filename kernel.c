@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v14.1 Anti-Skew Engine (0 Skew, True VESA Render)
+ * Wind OS  -  kernel.c  v14.2 Memory Shield (Buffer Overflow Fix & Auto-Flip)
  * Lead Developer: Efe (WindOS Team)
  */
 #include "kernel.h"
@@ -11,15 +11,18 @@ typedef int            i32;
 typedef signed char    i8;
 #define NULL ((void*)0)
 
-static volatile u8 *FB = (u8*)0; /* Artık pikselleri byte byte işleyeceğiz! */
+static volatile u8 *FB = (u8*)0; 
 static u32 SW = 1024, SH = 768;
-static u32 PITCH = 4096; /* Donanım Satır Genişliği (Byte) */
-static u8 BPP = 4;       /* Renk Derinliği (Piksel Başına Byte) */
+static u32 PITCH = 4096; 
+static u8 BPP = 4;       
 
-/* Kendi saf çizim tuvalimiz (Her zaman düz ve 32-bit) */
-static u32 back_buffer[1024 * 768];
+/* HAFIZA TAŞMASI KALKANI: Max 1920x1080 Destekli Dev Tuval! (Fontların silinmesini engeller) */
+#define MAX_SW 1920
+#define MAX_SH 1080
+static u32 back_buffer[MAX_SW * MAX_SH];
 
-static int FLIP_MODE = 0; /* Artık sistem varsayılan olarak DÜZ (0) başlayacak */
+/* VirtualBox ekranı ters verdiği için sistemi varsayılan olarak TERS (1) başlatıyorum ki sana DÜZ gelsin! */
+static int FLIP_MODE = 1; 
 static int GLASS_MODE = 0;  
 static int DRAW_GLASS = 0;  
 static u32 SYS_RAM_MB = 0;
@@ -111,10 +114,10 @@ static const u8 F8[128][8]={
  ['|']={0x18,0x18,0x18,0,0x18,0x18,0x18,0},['}']={0x07,0x0C,0x0C,0x38,0x0C,0x0C,0x07,0},['~']={0x6E,0x3B,0,0,0,0,0,0},
 };
 
-/* TUVAL ÇİZİCİ (Çarpılmaları önlemek için her zaman SW kullanır) */
+/* TUVAL ÇİZİCİ (Güvenlik Katmanı ile Sınırlandırıldı) */
 static inline void pp(i32 x,i32 y,u32 c){ 
-    if((u32)x<SW && (u32)y<SH) {
-        u32 bb_index = ((u32)y * SW) + (u32)x; /* Çarpılma Kökten Çözüldü */
+    if((u32)x<SW && (u32)y<SH && (u32)x<MAX_SW && (u32)y<MAX_SH) {
+        u32 bb_index = ((u32)y * SW) + (u32)x; 
         if(DRAW_GLASS && GLASS_MODE) {
             u32 bg = back_buffer[bb_index];
             back_buffer[bb_index] = ((bg & 0xFEFEFE) >> 1) + ((c & 0xFEFEFE) >> 1);
@@ -144,7 +147,7 @@ static void swap_buffers(void) {
         else if (FLIP_MODE == 3) { src_y = SH - 1 - y; src_x_dir = -1; }
 
         u32 bb_row = src_y * SW;
-        u32 fb_row = y * PITCH; /* Donanımın Gerçek Satır Genişliği (Byte) */
+        u32 fb_row = y * PITCH; 
 
         for(u32 x=0; x<SW; x++) {
             u32 src_x = (src_x_dir == 1) ? x : (SW - 1 - x);
@@ -152,15 +155,12 @@ static void swap_buffers(void) {
             u32 offset = fb_row + (x * BPP);
 
             if (BPP == 4) {
-                /* 32-bit Ekran Kartı için (Piksel Başı 4 Byte) */
                 *(u32*)(FB + offset) = color;
             } else if (BPP == 3) {
-                /* 24-bit Ekran Kartı için (Piksel Başı 3 Byte - Çarpılmayı Çözen Kısım!) */
                 FB[offset] = color & 0xFF;
                 FB[offset + 1] = (color >> 8) & 0xFF;
                 FB[offset + 2] = (color >> 16) & 0xFF;
             } else if (BPP == 2) {
-                /* 16-bit (RGB565) Eski Sistemler için Kurtarıcı */
                 u16 r = ((color >> 16) & 0xFF) >> 3;
                 u16 g = ((color >> 8) & 0xFF) >> 2;
                 u16 b = (color & 0xFF) >> 3;
@@ -308,7 +308,7 @@ static void SYSTEM_APP(void) {
     if(!SYS_OPEN) return;
     DRAW_WINDOW(250, 150, 500, 350, "Sistem Bilgisi - Quantum Edition", PAN_BG);
     if(CLK(250+500-35, 150+8, 25, 20)) SYS_OPEN=0;
-    ds(280, 210, "Isletim Sistemi: WindOS V14.1 Anti-Skew", WIN_BLUE, 0, 1);
+    ds(280, 210, "Isletim Sistemi: WindOS V14.2 Memory Shield", WIN_BLUE, 0, 1);
     ds(280, 240, "Mimari: x86 (32-bit) Saf C Cekirdegi", CTXT, 0, 1);
     char buf[64]; kcpy(buf, "Fiziksel RAM: ");
     itoa((int)SYS_RAM_MB, buf + klen(buf)); kcpy(buf + klen(buf), " MB");
@@ -378,9 +378,9 @@ static void WINDAI_ASSISTANT(void) {
     DRAW_WINDOW(ax, ay, aw, ah, "WindAI Quantum Core", BG_BASE);
     if(CLK(ax+aw-35, ay+8, 25, 20)) AI_OPEN=0;
     ds(ax+aw-150, ay+15, "[ Alt + A ]", CGY, 0, 1);
-    rr(ax+20, ay+70, 300, 40, 8, PAN_BG); ds(ax+30, ay+85, "Efe! Dinamik VESA Motoru (V14.1) aktif.", CTXT, 0, 1);
-    rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE); ds(ax+aw-310, ay+145, "Yazilardaki egrilik (Skew) tamamen cozuldu mu?", CW, 0, 1);
-    rr(ax+20, ay+190, 400, 60, 8, PAN_BG); ds(ax+30, ay+205, "Evet! BPP matematigi duzeltildi. Artik QEMU", CTXT, 0, 1); ds(ax+30, ay+225, "ne format verirse versin, cam gibi net olacak.", CTXT, 0, 1);
+    rr(ax+20, ay+70, 300, 40, 8, PAN_BG); ds(ax+30, ay+85, "Efe! Hafiza Kalkani (V14.2) aktif.", CTXT, 0, 1);
+    rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE); ds(ax+aw-310, ay+145, "Yazilarin silinmesi kokten cozuldu mu?", CW, 0, 1);
+    rr(ax+20, ay+190, 400, 60, 8, PAN_BG); ds(ax+30, ay+205, "Evet! Font motoru RAM'de artik gende. Dev", CTXT, 0, 1); ds(ax+30, ay+225, "cozunurluk gelse bile yazilar asla silinmeyecek.", CTXT, 0, 1);
     rr(ax+20, ah+ay-50, aw-40, 35, 17, PAN_BG); ds(ax+35, ah+ay-38, "Bir seyler yazin... (Simulasyon Modu)", CGY, 0, 1); circ(ax+aw-40, ah+ay-32, 12, AI_PURP); ds(ax+aw-44, ah+ay-36, ">", CW, 0, 1);
 }
 
@@ -402,7 +402,7 @@ static void DESKTOP(void){
         }
     }
     DRAW_GLASS = 1; fr(0, 0, SW, 25, CK); DRAW_GLASS = 0;
-    ds(15, 8, "WindOS V14.1 Quantum Vision", CTXT, 0, 1);
+    ds(15, 8, "WindOS V14.2 Memory Shield", CTXT, 0, 1);
     char top_buf[80]; kcpy(top_buf, "Mod: "); kcpy(top_buf + klen(top_buf), RES_NAMES[CURRENT_RES]); kcpy(top_buf + klen(top_buf), " | RAM: "); itoa((int)SYS_RAM_MB, top_buf + klen(top_buf)); kcpy(top_buf + klen(top_buf), " MB | [F] Duzelt"); ds(SW-520, 8, top_buf, CGY, 0, 1);
     FILEMGR(); CHROMIUM_BROWSER(); SYSTEM_APP(); DISPLAY_APP(); WINDAI_ASSISTANT(); 
 
@@ -420,22 +420,23 @@ static void DESKTOP(void){
 }
 
 void kernel_main(multiboot_info_t *mbi){
-    /* 1. DİNAMİK EKRAN KARTI ANALİZİ (ÇARPILMAYI ÇÖZEN KISIM) */
     u8 bpp_bits = mbi->framebuffer_bpp; 
-    if(bpp_bits == 0) bpp_bits = 32; /* Hata payına karşı 32 varsayalım */
-    BPP = bpp_bits / 8; /* Piksel başı gerçek byte (24 bit ise 3 olur) */
+    if(bpp_bits == 0) bpp_bits = 32; 
+    BPP = bpp_bits / 8; 
     
     FB = (volatile u8*)(unsigned long)mbi->framebuffer_addr; 
     SW = mbi->framebuffer_width; 
     SH = mbi->framebuffer_height; 
     
-    /* QEMU'nun donanım satır boşluğu (Padding) */
     PITCH = mbi->framebuffer_pitch; 
-    if(PITCH == 0) PITCH = SW * BPP; /* Güvenlik kontrolü */
+    if(PITCH == 0) PITCH = SW * BPP; 
 
     if(!FB || SW==0){ FB=(volatile u8*)0xFD000000u; SW=1024; SH=768; PITCH=1024*4; BPP=4; }
     
-    /* 2. DİNAMİK RAM TESPİTİ */
+    /* GÜVENLİK KALKANI: VirtualBox devasa çözünürlük verirse sınırı aşmasın ve fontu silmesin! */
+    if(SW > MAX_SW) SW = MAX_SW;
+    if(SH > MAX_SH) SH = MAX_SH;
+
     u32 flags = *((u32*)((u8*)mbi + 0));
     if(flags & 1) { u32 mem_upper_kb = *((u32*)((u8*)mbi + 8)); SYS_RAM_MB = (mem_upper_kb / 1024) + 1; } 
     else { SYS_RAM_MB = 2048; }
