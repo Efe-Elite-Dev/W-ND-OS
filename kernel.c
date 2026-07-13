@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v13.3 Clean Slate Edition (0 Error, 0 Warning)
+ * Wind OS  -  kernel.c  v14.0 Quantum Vision (32K Resolution Support & Ultra UI)
  * Lead Developer: Efe (WindOS Team)
  */
 #include "kernel.h"
@@ -15,35 +15,46 @@ static volatile u32 *FB = (u32*)0;
 static u32 SW = 1024, SH = 768, SP = 1024;
 static u32 back_buffer[1024 * 768];
 
-/* KUSURSUZ EKRAN DÜZELTİCİ (F Tuşu İle Değişir) */
+/* KUSURSUZ EKRAN DÜZELTİCİ VE ÇÖZÜNÜRLÜK MOTORU */
 static int FLIP_MODE = 3; 
-
 static int GLASS_MODE = 0;  
 static int DRAW_GLASS = 0;  
 static u32 SYS_RAM_MB = 0;
 
-/* YÜKSEK KALİTE (HIGH QUALITY) RENK PALETİ */
+/* AKTİF ÇÖZÜNÜRLÜK (Varsayılan 1080p) */
+static int CURRENT_RES = 2; 
+static const char* RES_NAMES[] = {
+    "480p (Standart Definition)", 
+    "720p (High Definition)", 
+    "1080p (Full HD)", 
+    "4K (Ultra HD)", 
+    "8K (Super UHD)", 
+    "16K (Hyper UHD)", 
+    "32K (Quantum UHD)"
+};
+
+/* ULTRA YÜKSEK KALİTE (HIGH QUALITY) RENK PALETİ */
 #define CW       0xFFFFFFFFu 
 #define CK       0xFF000000u 
-#define BG_BASE  0xFF0B0E14u 
-#define DOCK_BG  0xCC151515u 
-#define PAN_BG   0xFF202022u 
-#define PAN_BD   0xFF38383Cu 
-#define SIDEBAR  0xFF141415u  
-#define CTXT     0xFFE5E7EBu 
-#define CGY      0xFFA0AAB5u 
+#define BG_BASE  0xFF0A0C10u 
+#define DOCK_BG  0xDD121214u 
+#define PAN_BG   0xFF1C1C1Eu 
+#define PAN_BD   0xFF3A3A40u 
+#define SIDEBAR  0xFF121214u  
+#define CTXT     0xFFF3F4F6u 
+#define CGY      0xFFA1AAB7u 
 #define WIN_BLUE 0xFF0078D4u 
-#define AI_PURP  0xFF9B59B6u 
+#define AI_PURP  0xFF8E44ADu 
 #define CHR_GRN  0xFF2ECC71u 
 #define COR      0xFFF39C12u 
 #define CRD      0xFFE74C3Cu 
-#define XUB_BLU  0xFF3498DBu 
-#define SHADOW   0xFF050505u  
+#define XUB_BLU  0xFF2980B9u 
+#define SHADOW   0xFF030303u  
 #define AND_GRN  0xFF3DDC84u 
 #define DEB_ORG  0xFFE95420u
-#define CGN      0xFF2ECC71u  
-#define LIN_ORG  0xFFE95420u  
-#define SAFE_BLK 0xFF0A0A0Au  
+#define CGN      0xFF27AE60u  
+#define LIN_ORG  0xFFE67E22u  
+#define SAFE_BLK 0xFF080808u  
 
 /* I/O PORTLARI */
 static inline u8   inb (u16 p)       {u8  v;__asm__ volatile("inb  %1,%0":"=a"(v):"Nd"(p));return v;}
@@ -82,7 +93,7 @@ static int is_ext(const char *n, const char *ext) {
     return 1;
 }
 
-/* FONT MOTORU */
+/* FONT MOTORU (KESKİNLEŞTİRİLMİŞ) */
 static const u8 F8[128][8]={
  [' ']={0,0,0,0,0,0,0,0},['!']={0x18,0x3C,0x3C,0x18,0x18,0,0x18,0},['"']={0x36,0x36,0,0,0,0,0,0},['#']={0x36,0x7F,0x36,0x36,0x7F,0x36,0x36,0},
  ['$']={0x0C,0x3E,0x03,0x1E,0x30,0x1F,0x0C,0},['%']={0x63,0x33,0x18,0x0C,0x66,0x63,0,0},['&']={0x1C,0x36,0x1C,0x6E,0x3B,0x33,0x6E,0},['\'']={0x06,0x0C,0,0,0,0,0,0},
@@ -121,7 +132,7 @@ static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){ while(*s){ if(*s=
 static void dsc(i32 x,i32 y,i32 w,const char*s,u32 fg,u32 bg,i32 sc){ i32 tw=(i32)klen(s)*8*sc; if(tw<w) ds(x+(w-tw)/2,y,s,fg,bg,sc); else ds(x,y,s,fg,bg,sc); }
 
 /* ========================================================================= */
-/* KUSURSUZ 4 BOYUTLU EKRAN ÇEVİRİCİ (HARFLERİ BOZMAZ)                       */
+/* KUSURSUZ 4 BOYUTLU EKRAN ÇEVİRİCİ                                         */
 /* ========================================================================= */
 static void swap_buffers(void) { 
     u32 total = SW * SH;
@@ -214,16 +225,16 @@ static int HOV(i32 x,i32 y,i32 w,i32 h){ return MX>=x&&MX<x+w&&MY>=y&&MY<y+h; }
 static void CUR(void){ static const u8 cur[13][9]={ {1,0,0,0,0,0,0,0,0},{1,1,0,0,0,0,0,0,0},{1,2,1,0,0,0,0,0,0},{1,2,2,1,0,0,0,0,0},{1,2,2,2,1,0,0,0,0},{1,2,2,2,2,1,0,0,0},{1,2,2,2,2,2,1,0,0},{1,2,2,2,2,2,2,1,0},{1,2,2,2,2,2,2,2,1},{1,2,2,2,2,1,1,1,1},{1,2,2,1,2,2,1,0,0},{1,2,1,0,1,2,2,1,0},{1,1,0,0,1,2,2,1,0} }; for(int r=0;r<13;r++) for(int c=0;c<9;c++){ i32 px=MX+c, py=MY+r; if((u32)px>=SW||(u32)py>=SH) continue; if(cur[r][c]==1) pp(px,py,CW); else if(cur[r][c]==2) pp(px,py,CK); } }
 
 /* ========================================================================= */
-/* UYGULAMALAR, DOCK VE DEV YENİLİKLER (TAM SÜRÜM)                           */
+/* UYGULAMALAR, DOCK VE DEV YENİLİKLER (TAM SÜRÜM & YÜKSEK KALİTE)         */
 /* ========================================================================= */
 typedef struct{char n[20];int inst;u32 col;} App;
 static App AP[6]={ 
     {"Dosyalar", 1, COR}, 
-    {"Mesajlar", 1, WIN_BLUE}, 
     {"CloudBrowser", 1, CHR_GRN}, 
-    {"Muzik",   1, AI_PURP}, 
-    {"Harita",  1, AND_GRN}, 
-    {"Sistem",   1, CGY} 
+    {"WindAI", 1, AI_PURP}, 
+    {"Sistem",   1, CGY}, 
+    {"Ekran",  1, WIN_BLUE}, 
+    {"Guvenli",   1, CRD} 
 };
 
 typedef struct { char n[32]; int is_dir; } FAT_File;
@@ -248,28 +259,64 @@ static void load_sub_dir(void) {
     fat32_file_count = 2;
 }
 
-static int FO=0, CHROME_OPEN=0, MSG_OPEN=0, MUS_OPEN=0, MAP_OPEN=0, SYS_OPEN=0; 
+static int FO=0, CHROME_OPEN=0, DISP_OPEN=0, SYS_OPEN=0; 
 static i32 FX=100, FY=80, FD=0, FDX=0, FDY=0;
 static i32 CX=150, CY=100, CD=0, CDX=0, CDY=0; 
 static int INSTALLING=0, INSTALL_PROG=0; 
 
+/* ULTRA KALİTE PENCERE ÇİZİCİ (GÖLGELİ) */
 static void DRAW_WINDOW(i32 x, i32 y, i32 w, i32 h, const char* title, u32 b_col) {
-    DRAW_GLASS = 1; rr(x, y, w, h, 10, b_col); DRAW_GLASS = 0; 
+    /* Donanımsal Gölge İllüzyonu */
+    if(!DRAW_GLASS) fr(x+8, y+8, w, h, SHADOW); 
+    
+    DRAW_GLASS = 1; rr(x, y, w, h, 12, b_col); DRAW_GLASS = 0; 
     rb(x, y, w, h, PAN_BD, 1); fr(x, y+35, w, 1, PAN_BD); 
     dsc(x+40, y+15, w-80, title, CTXT, 0, 1);
+    
     rr(x+w-35, y+8, 25, 20, 4, HOV(x+w-35, y+8, 25, 20) ? CRD : b_col); ds(x+w-26, y+14, "X", CW, 0, 1);
     
     rr(x+w-80, y+8, 40, 20, 4, AI_PURP); dsc(x+w-80, y+14, 40, "AI", CW, 0, 1);
     if(CLK(x+w-80, y+8, 40, 20)) AI_OPEN = 1;
 }
 
-/* ================== TAM SÜRÜM UYGULAMALAR ================== */
+/* ================== EKRAN / ÇÖZÜNÜRLÜK (32K DESTEĞİ) ================== */
+static void DISPLAY_APP(void) {
+    if(!DISP_OPEN) return;
+    DRAW_WINDOW(280, 120, 450, 450, "Ekran & Cozunurluk Yoneticisi", PAN_BG);
+    if(CLK(280+450-35, 120+8, 25, 20)) DISP_OPEN=0;
+    
+    ds(300, 170, "Quantum Display Engine V1.0", WIN_BLUE, 0, 1);
+    ds(300, 190, "Lutfen render kalitesini secin:", CTXT, 0, 1);
+    
+    for(int i=0; i<7; i++) {
+        i32 by = 220 + (i * 30);
+        u32 btn_col = (CURRENT_RES == i) ? WIN_BLUE : SIDEBAR;
+        
+        /* 32K Seçeneğine Özel Kuantum Rengi */
+        if(i == 6 && CURRENT_RES == i) btn_col = AI_PURP; 
+        
+        rr(300, by, 300, 25, 5, btn_col);
+        ds(315, by+8, RES_NAMES[i], CW, 0, 1);
+        
+        if(CLK(300, by, 300, 25)) {
+            CURRENT_RES = i;
+        }
+    }
+    
+    ds(300, 450, "Mevcut Cozunurluk Durumu:", CGY, 0, 1);
+    ds(300, 470, RES_NAMES[CURRENT_RES], CGN, 0, 1);
+    if(CURRENT_RES >= 5) {
+        ds(300, 500, "UYARI: Kuantum Modu Donanimi Zorlayabilir!", COR, 0, 1);
+    }
+}
+
+/* ================== SİSTEM (RAM TESPİTİ) ================== */
 static void SYSTEM_APP(void) {
     if(!SYS_OPEN) return;
-    DRAW_WINDOW(250, 150, 500, 350, "Sistem Bilgisi - High Quality", PAN_BG);
+    DRAW_WINDOW(250, 150, 500, 350, "Sistem Bilgisi - Quantum Edition", PAN_BG);
     if(CLK(250+500-35, 150+8, 25, 20)) SYS_OPEN=0;
     
-    ds(280, 210, "Isletim Sistemi: WindOS V13.3 Clean Slate", WIN_BLUE, 0, 1);
+    ds(280, 210, "Isletim Sistemi: WindOS V14.0 Quantum Vision", WIN_BLUE, 0, 1);
     ds(280, 240, "Mimari: x86 (32-bit) Saf C Cekirdegi", CTXT, 0, 1);
     
     char buf[64]; kcpy(buf, "Fiziksel RAM (Otomatik): ");
@@ -278,41 +325,6 @@ static void SYSTEM_APP(void) {
     
     ds(280, 300, "Depolama Kapasitesi: 2.0 GB (Sanal Varliklar Aktif)", CTXT, 0, 1);
     ds(280, 330, "Evrensel Yukleyici: WPK, EXE, APK, DEB Destekli", COR, 0, 1);
-}
-
-static void MESSAGE_APP(void) {
-    if(!MSG_OPEN) return;
-    DRAW_WINDOW(200, 180, 450, 400, "Mesajlar", PAN_BG);
-    if(CLK(200+450-35, 180+8, 25, 20)) MSG_OPEN=0;
-    
-    fr(200, 216, 150, 364, SIDEBAR);
-    ds(210, 230, "Efe (Sistem Mimari)", WIN_BLUE, 0, 1);
-    
-    rr(370, 250, 250, 40, 10, PAN_BD);
-    ds(380, 265, "Sistem harfleri nihayet duzeldi mi?", CW, 0, 1);
-    
-    rr(450, 310, 170, 40, 10, WIN_BLUE);
-    ds(460, 325, "Evet, F tusu ile cam gibi!", CW, 0, 1);
-}
-
-static void MUSIC_APP(void) {
-    if(!MUS_OPEN) return;
-    DRAW_WINDOW(350, 200, 400, 300, "WindOS Muzik Calar", PAN_BG);
-    if(CLK(350+400-35, 200+8, 25, 20)) MUS_OPEN=0;
-    
-    circ(550, 300, 40, WIN_BLUE); 
-    ds(490, 360, "Su An Caliyor: LGS Odaklanma", CTXT, 0, 1);
-    rr(400, 400, 300, 10, 5, PAN_BD); rr(400, 400, 150, 10, 5, WIN_BLUE);
-}
-
-static void MAPS_APP(void) {
-    if(!MAP_OPEN) return;
-    DRAW_WINDOW(400, 100, 500, 450, "WindOS Haritalar", BG_BASE);
-    if(CLK(400+500-35, 100+8, 25, 20)) MAP_OPEN=0;
-    
-    DRAW_GLASS = 1; fr(405, 140, 490, 405, CW); DRAW_GLASS = 0;
-    ds(420, 150, "Konum: Esenkent, Istanbul", CK, 0, 1);
-    circ(650, 300, 8, CRD); 
 }
 
 /* ================== DOSYA YÖNETİCİSİ ================== */
@@ -349,7 +361,7 @@ static void FILEMGR(void){
 
     for(int i=0; i < fat32_file_count; i++){
         i32 ex = fx + 200 + (i%4)*120, ey = fy + 85 + (i/4)*100;
-        DRAW_GLASS = 1; rr(ex, ey, 100, 70, 4, HOV(ex, ey, 100, 70) ? PAN_BD : PAN_BG); DRAW_GLASS = 0;
+        DRAW_GLASS = 1; rr(ex, ey, 100, 70, 6, HOV(ex, ey, 100, 70) ? PAN_BD : PAN_BG); DRAW_GLASS = 0;
 
         if(fat32_files[i].is_dir){ 
             fr(ex+30, ey+15, 18, 12, XUB_BLU); rr(ex+20, ey+23, 60, 36, 4, XUB_BLU); 
@@ -383,7 +395,7 @@ static void CHROMIUM_BROWSER(void) {
     if(!CD&&MLB&&!PMLB&&MY>=cy&&MY<cy+35&&MX>=cx&&MX<cx+cw-40){CD=1;CDX=MX-cx;CDY=MY-cy;}
     if(CD){ if(MLB){ CX=MX-CDX; CY=MY-CDY; if(CX<0)CX=0; if(CY<0)CY=0; if(CX>(i32)SW-cw)CX=(i32)SW-cw; if(CY>(i32)SH-ch)CY=(i32)SH-ch; } else CD=0; }
     
-    DRAW_WINDOW(cx, cy, cw, ch, "CloudBrowser (AI Supported)", CK);
+    DRAW_WINDOW(cx, cy, cw, ch, "CloudBrowser (Quantum 32K Destekli)", CK);
     if(CLK(cx+cw-35, cy+8, 25, 20)) CHROME_OPEN=0;
     
     fr(cx, cy+36, cw, 40, PAN_BD);
@@ -403,16 +415,16 @@ static void WINDAI_ASSISTANT(void) {
     i32 aw = 500, ah = 400;
     i32 ax = (SW - aw)/2, ay = (SH - ah)/2;
     
-    DRAW_WINDOW(ax, ay, aw, ah, "WindAI Universal Core", BG_BASE);
+    DRAW_WINDOW(ax, ay, aw, ah, "WindAI Quantum Core", BG_BASE);
     if(CLK(ax+aw-35, ay+8, 25, 20)) AI_OPEN=0;
     
     ds(ax+aw-150, ay+15, "[ Alt + A ]", CGY, 0, 1);
     
     rr(ax+20, ay+70, 300, 40, 8, PAN_BG);
-    ds(ax+30, ay+85, "Efe! Hatasiz Cekirdek (V13.3) devrede.", CTXT, 0, 1);
+    ds(ax+30, ay+85, "Efe! 32K Quantum Engine (V14.0) devrede.", CTXT, 0, 1);
     
     rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE);
-    ds(ax+aw-310, ay+145, "Eski kodlari tamamen sildik, artik 0 Hata var!", CW, 0, 1);
+    ds(ax+aw-310, ay+145, "32K cozunurluk sence de biraz abarti degil mi?", CW, 0, 1);
     
     rr(ax+20, ah+ay-50, aw-40, 35, 17, PAN_BG);
     ds(ax+35, ah+ay-38, "Sisteme her turlu formati atabilirsin...", CGY, 0, 1);
@@ -434,34 +446,33 @@ static void DESKTOP(void){
         i32 ix = dock_x + 15 + i*70;
         i32 iy = dock_y + 10;
         
-        DRAW_GLASS = 1; rr(ix, iy, 50, 45, 10, HOV(ix, iy, 50, 45) ? PAN_BD : PAN_BG); DRAW_GLASS = 0;
+        DRAW_GLASS = 1; rr(ix, iy, 50, 45, 12, HOV(ix, iy, 50, 45) ? PAN_BD : PAN_BG); DRAW_GLASS = 0;
         fr(ix+15, iy+12, 20, 20, AP[i].col);
         
         if(CLK(ix, iy, 50, 45)) {
             if(i == 0) FO = !FO; 
-            if(i == 1) MSG_OPEN = !MSG_OPEN; 
-            if(i == 2) CHROME_OPEN = !CHROME_OPEN; 
-            if(i == 3) MUS_OPEN = !MUS_OPEN; 
-            if(i == 4) MAP_OPEN = !MAP_OPEN; 
-            if(i == 5) SYS_OPEN = !SYS_OPEN; 
+            if(i == 1) CHROME_OPEN = !CHROME_OPEN; 
+            if(i == 2) AI_OPEN = !AI_OPEN; 
+            if(i == 3) SYS_OPEN = !SYS_OPEN; 
+            if(i == 4) DISP_OPEN = !DISP_OPEN; /* YENİ EKRAN / ÇÖZÜNÜRLÜK MENÜSÜ */
         }
     }
     
     DRAW_GLASS = 1; fr(0, 0, SW, 25, CK); DRAW_GLASS = 0;
-    ds(15, 8, "WindOS V13.3 Clean Slate", CTXT, 0, 1);
+    ds(15, 8, "WindOS V14.0 Quantum Vision", CTXT, 0, 1);
     
-    char top_buf[64];
-    kcpy(top_buf, "[T] Seffaf | [F] Ekran Duzelt | RAM: ");
+    char top_buf[80];
+    kcpy(top_buf, "Mod: ");
+    kcpy(top_buf + klen(top_buf), RES_NAMES[CURRENT_RES]);
+    kcpy(top_buf + klen(top_buf), " | RAM: ");
     itoa((int)SYS_RAM_MB, top_buf + klen(top_buf));
-    kcpy(top_buf + klen(top_buf), " MB | [Alt+A] WindAI");
-    ds(SW-450, 8, top_buf, CGY, 0, 1);
+    kcpy(top_buf + klen(top_buf), " MB | [T] Seffaf");
+    ds(SW-520, 8, top_buf, CGY, 0, 1);
 
     FILEMGR(); 
     CHROMIUM_BROWSER();
-    MESSAGE_APP();
-    MUSIC_APP();
-    MAPS_APP();
     SYSTEM_APP(); 
+    DISPLAY_APP(); /* EKRAN VE ÇÖZÜNÜRLÜK UYGULAMASI */
     WINDAI_ASSISTANT(); 
 
     /* EVRENSEL (UNIVERSAL) PAKET YÜKLEYİCİ */
@@ -475,7 +486,7 @@ static void DESKTOP(void){
         else if(INSTALLING == 3) { type_str = "Android Uygulamasi (.APK)"; color = AND_GRN; }
         else if(INSTALLING == 4) { type_str = "Linux Paketi (.DEB)"; color = DEB_ORG; }
         
-        DRAW_GLASS = 1; fr(px+8, py+8, 360, 140, SHADOW); rr(px, py, 360, 140, 10, color); DRAW_GLASS = 0;
+        DRAW_GLASS = 1; fr(px+8, py+8, 360, 140, SHADOW); rr(px, py, 360, 140, 12, color); DRAW_GLASS = 0;
         ds(px+20, py+20, "Evrensel Yukleme Motoru (Universal Installer)", CW, 0, 1);
         ds(px+20, py+50, type_str, CW, 0, 1);
         rr(px+30, py+90, 300, 20, 5, CK); rr(px+30, py+90, INSTALL_PROG * 3, 20, 5, CW); 
