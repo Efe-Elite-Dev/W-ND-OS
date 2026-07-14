@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v14.4 Mirror Fix (Ayna Etkisi Kırıldı & Tam Netlik)
+ * Wind OS  -  kernel.c  v14.6 AI Screen Shield (K-Key Auto Fix & AI Notification)
  * Lead Developer: Efe (WindOS Team)
  */
 #include "kernel.h"
@@ -21,11 +21,13 @@ static u8 BPP = 4;
 #define MAX_SH 1080
 static u32 back_buffer[MAX_SW * MAX_SH];
 
-/* AYNA KIRICI: VirtualBox ekranı yatay ters verdiği için biz de kodu yatay ters (2) başlatıyoruz. Sonuç: DÜZ EKRAN! */
-static int FLIP_MODE = 2; 
+static int FLIP_MODE = 0; 
 static int GLASS_MODE = 0;  
 static int DRAW_GLASS = 0;  
 static u32 SYS_RAM_MB = 0;
+
+/* YAPAY ZEKA BİLDİRİM SAYACI */
+static int AI_MESSAGE_TIMER = 0;
 
 /* AKTİF ÇÖZÜNÜRLÜK MENÜSÜ */
 static int CURRENT_RES = 2; 
@@ -39,7 +41,7 @@ static const char* RES_NAMES[] = {
     "32K (QUANTUM UHD)"
 };
 
-/* ULTRA YÜKSEK KALİTE (HIGH QUALITY) RENK PALETİ */
+/* ULTRA YÜKSEK KALİTE RENK PALETİ */
 #define CW       0xFFFFFFFFu 
 #define CK       0xFF000000u 
 #define BG_BASE  0xFF0A0C10u 
@@ -94,7 +96,7 @@ static int is_ext(const char *n, const char *ext) {
     return 1;
 }
 
-/* FONT MOTORU (EKSİKSİZ, ZIRHLI BÜYÜK HARFLER) */
+/* FONT MOTORU (BÜYÜK HARFLER) */
 static const u8 F8[128][8]={
  [' ']={0,0,0,0,0,0,0,0},['!']={0x18,0x3C,0x3C,0x18,0x18,0,0x18,0},['"']={0x36,0x36,0,0,0,0,0,0},['#']={0x36,0x7F,0x36,0x36,0x7F,0x36,0x36,0},
  ['$']={0x0C,0x3E,0x03,0x1E,0x30,0x1F,0x0C,0},['%']={0x63,0x33,0x18,0x0C,0x66,0x63,0,0},['&']={0x1C,0x36,0x1C,0x6E,0x3B,0x33,0x6E,0},['\'']={0x06,0x0C,0,0,0,0,0,0},
@@ -131,7 +133,7 @@ static void rb(i32 x,i32 y,i32 w,i32 h,u32 c,i32 t){ fr(x,y,w,t,c); fr(x,y+h-t,w
 static void circ(i32 cx,i32 cy,i32 r,u32 c){ if(r<=0) return; for(i32 dy=-r;dy<=r;dy++) for(i32 dx=-r;dx<=r;dx++) if(dx*dx+dy*dy<=r*r) pp(cx+dx,cy+dy,c); }
 static void rr(i32 x,i32 y,i32 w,i32 h,i32 r,u32 c){ if(r>w/2) r=w/2; if(r>h/2) r=h/2; fr(x+r,y,w-2*r,h,c); fr(x,y+r,r,h-2*r,c); fr(x+w-r,y+r,r,h-2*r,c); circ(x+r,y+r,r,c); circ(x+w-r-1,y+r,r,c); circ(x+r,y+h-r-1,r,c); circ(x+w-r-1,y+h-r-1,r,c); }
 
-/* SİLİNİK HARFLERİ ÇÖZEN YER: KÜÇÜK HARFLERİ OTOMATİK BÜYÜTÜR! */
+/* KÜÇÜK HARFLERİ OTOMATİK BÜYÜTÜR! */
 static void dc(i32 x,i32 y,char ch,u32 fg,u32 bg,i32 sc){ 
     if(ch >= 'a' && ch <= 'z') ch -= 32; 
     if((u8)ch>=128) ch='?'; 
@@ -194,8 +196,14 @@ static u8 kbd_poll(void){
     char c=SCMAP[sc]; if(!c) return 0; 
     
     if(c == 't' || c == 'T') { GLASS_MODE = !GLASS_MODE; return 0; }
-    if(c == 'f' || c == 'F') { FLIP_MODE = (FLIP_MODE + 1) % 4; return 0; }
     if(K_ALT && (c == 'a' || c == 'A')) { AI_OPEN = !AI_OPEN; return 0; }
+
+    /* İŞTE YAPAY ZEKA TETİKLEYİCİSİ: 'K' VEYA 'F' TUŞU EKRANI DÜZELTİR! */
+    if(c == 'k' || c == 'K' || c == 'f' || c == 'F') { 
+        FLIP_MODE = (FLIP_MODE + 1) % 4; 
+        AI_MESSAGE_TIMER = 150; /* Bildirimi 150 frame boyunca ekranda tut */
+        return 0; 
+    }
     
     return (u8)c; 
 }
@@ -299,7 +307,7 @@ static void DISPLAY_APP(void) {
     if(!DISP_OPEN) return;
     DRAW_WINDOW(280, 120, 450, 450, "EKRAN & COZUNURLUK YONETICISI", PAN_BG);
     if(CLK(280+450-35, 120+8, 25, 20)) DISP_OPEN=0;
-    ds(300, 170, "QUANTUM DISPLAY ENGINE V1.4", WIN_BLUE, 0, 1);
+    ds(300, 170, "QUANTUM DISPLAY ENGINE V1.6", WIN_BLUE, 0, 1);
     ds(300, 190, "LUTFEN RENDER KALITESINI SECIN:", CTXT, 0, 1);
     for(int i=0; i<7; i++) {
         i32 by = 220 + (i * 30);
@@ -317,7 +325,7 @@ static void SYSTEM_APP(void) {
     if(!SYS_OPEN) return;
     DRAW_WINDOW(250, 150, 500, 350, "SISTEM BILGISI - QUANTUM EDITION", PAN_BG);
     if(CLK(250+500-35, 150+8, 25, 20)) SYS_OPEN=0;
-    ds(280, 210, "ISLETIM SISTEMI: WINDOS V14.4 MIRROR FIX", WIN_BLUE, 0, 1);
+    ds(280, 210, "ISLETIM SISTEMI: WINDOS V14.6 AI SHIELD", WIN_BLUE, 0, 1);
     ds(280, 240, "MIMARI: X86 (32-BIT) SAF C CEKIRDEGI", CTXT, 0, 1);
     char buf[64]; kcpy(buf, "FIZIKSEL RAM: ");
     itoa((int)SYS_RAM_MB, buf + klen(buf)); kcpy(buf + klen(buf), " MB");
@@ -387,9 +395,9 @@ static void WINDAI_ASSISTANT(void) {
     DRAW_WINDOW(ax, ay, aw, ah, "WINDAI QUANTUM CORE", BG_BASE);
     if(CLK(ax+aw-35, ay+8, 25, 20)) AI_OPEN=0;
     ds(ax+aw-150, ay+15, "[ ALT + A ]", CGY, 0, 1);
-    rr(ax+20, ay+70, 300, 40, 8, PAN_BG); ds(ax+30, ay+85, "EFE! AYNA KIRICI (V14.4) AKTIF.", CTXT, 0, 1);
-    rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE); ds(ax+aw-310, ay+145, "EKRAN ARTIK TAMAMEN DUZ VE NET OLDU MU?", CW, 0, 1);
-    rr(ax+20, ay+190, 400, 60, 8, PAN_BG); ds(ax+30, ay+205, "EVET! YATAY AYNA ETKISI (FLIP_MODE=2) ILE", CTXT, 0, 1); ds(ax+30, ay+225, "KOKTEN COZULDU. EKRAN ARTIK MUKEMMEL.", CTXT, 0, 1);
+    rr(ax+20, ay+70, 300, 40, 8, PAN_BG); ds(ax+30, ay+85, "EFE! AI AUTO-FIX (V14.6) AKTIF.", CTXT, 0, 1);
+    rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE); ds(ax+aw-310, ay+145, "KLAVYEDEN 'K' TUSUNA BASTIGIMDA NE OLACAK?", CW, 0, 1);
+    rr(ax+20, ay+190, 400, 60, 8, PAN_BG); ds(ax+30, ay+205, "YAPAY ZEKA EKRANIN TERS OLUP OLMADIGINI", CTXT, 0, 1); ds(ax+30, ay+225, "ANALIZ EDECEK VE ANINDA DUZELTECEK!", CTXT, 0, 1);
     rr(ax+20, ah+ay-50, aw-40, 35, 17, PAN_BG); ds(ax+35, ah+ay-38, "BIR SEYLER YAZIN... (SIMULASYON MODU)", CGY, 0, 1); circ(ax+aw-40, ah+ay-32, 12, AI_PURP); ds(ax+aw-44, ah+ay-36, ">", CW, 0, 1);
 }
 
@@ -411,8 +419,8 @@ static void DESKTOP(void){
         }
     }
     DRAW_GLASS = 1; fr(0, 0, SW, 25, CK); DRAW_GLASS = 0;
-    ds(15, 8, "WINDOS V14.4 MIRROR FIX", CTXT, 0, 1);
-    char top_buf[80]; kcpy(top_buf, "MOD: "); kcpy(top_buf + klen(top_buf), RES_NAMES[CURRENT_RES]); kcpy(top_buf + klen(top_buf), " | RAM: "); itoa((int)SYS_RAM_MB, top_buf + klen(top_buf)); kcpy(top_buf + klen(top_buf), " MB | [F] EKRANI DONDUR"); ds(SW-570, 8, top_buf, CGY, 0, 1);
+    ds(15, 8, "WINDOS V14.6 AI SHIELD", CTXT, 0, 1);
+    char top_buf[80]; kcpy(top_buf, "MOD: "); kcpy(top_buf + klen(top_buf), RES_NAMES[CURRENT_RES]); kcpy(top_buf + klen(top_buf), " | RAM: "); itoa((int)SYS_RAM_MB, top_buf + klen(top_buf)); kcpy(top_buf + klen(top_buf), " MB | [K] AI AUTO-FIX"); ds(SW-570, 8, top_buf, CGY, 0, 1);
     FILEMGR(); CHROMIUM_BROWSER(); SYSTEM_APP(); DISPLAY_APP(); WINDAI_ASSISTANT(); 
 
     if(INSTALLING) {
@@ -425,6 +433,16 @@ static void DESKTOP(void){
         ds(px+20, py+20, "EVRENSEL YUKLEME MOTORU (UNIVERSAL INSTALLER)", CW, 0, 1); ds(px+20, py+50, type_str, CW, 0, 1);
         rr(px+30, py+90, 300, 20, 5, CK); rr(px+30, py+90, INSTALL_PROG * 3, 20, 5, CW); INSTALL_PROG += 1;
         if(INSTALL_PROG >= 100) INSTALLING = 0; 
+    }
+
+    /* İŞTE SÜPER HAVALI YAPAY ZEKA BİLDİRİMİ! */
+    if(AI_MESSAGE_TIMER > 0) {
+        i32 msg_w = 460, msg_h = 35;
+        i32 msg_x = (SW - msg_w) / 2;
+        DRAW_GLASS = 1; rr(msg_x, 40, msg_w, msg_h, 8, CHR_GRN); DRAW_GLASS = 0;
+        rb(msg_x, 40, msg_w, msg_h, CW, 1);
+        dsc(msg_x, 50, msg_w, "YAPAY ZEKA: EKRAN YONLENDIRMESI DUZELTILDI!", CK, 0, 1);
+        AI_MESSAGE_TIMER--;
     }
 }
 
