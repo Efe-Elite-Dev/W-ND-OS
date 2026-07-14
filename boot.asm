@@ -1,12 +1,6 @@
 ; =========================================================
 ; Wind OS / Sky-Core-OS  -  boot.asm
 ; Multiboot 1 + VBE Linear Framebuffer (1024x768x32)
-;
-; HATA DÜZELTMESİ:
-;   Eski header'da bit2 (video) için gereken 5 adres alanı
-;   (header_addr, load_addr, load_end, bss_end, entry_addr)
-;   EKSİKTİ. GRUB "unsupported graphical mode" hatasını
-;   bu yüzden veriyordu. Aşağıda doğru tam yapı var.
 ; =========================================================
 
 MBOOT_MAGIC    equ 0x1BADB002
@@ -19,7 +13,6 @@ align 4
     dd MBOOT_FLAGS
     dd MBOOT_CHECKSUM
     ; ---- Adres alanları: bit16=0 olduğunda 0 yazılır ----
-    ; Ama bit2 (video) için GRUB bu 5 dword'ü yine de okur!
     dd 0        ; header_addr   (kullanılmıyor)
     dd 0        ; load_addr     (kullanılmıyor)
     dd 0        ; load_end_addr (kullanılmıyor)
@@ -29,7 +22,7 @@ align 4
     dd 0        ; mode_type  0 = linear grafik
     dd 1024     ; genişlik
     dd 768      ; yükseklik
-    dd 32       ; bit/piksel
+    dd 32       ; bit/piksel (32-bit Kuantum Kalite)
 
 section .bss
 align 16
@@ -44,7 +37,7 @@ extern kernel_main  ; kernel.c'deki void kernel_main(multiboot_info_t*)
 _start:
     cli                 ; kesmeler kapalı
     mov  esp, stack_top ; stack kur
-    push ebx            ; multiboot_info_t* → kernel_main'e parametre
+    push ebx            ; DONANIM BİLGİSİNİ C'YE GÖNDER (mbi parametresi)
     call kernel_main
 
 .halt:
