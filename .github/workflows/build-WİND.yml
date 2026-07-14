@@ -13,7 +13,7 @@ jobs:
 
     steps:
     - name: 📥 Repoyu Sunucuya Çek
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4 # GitHub'ın yeni V4 altyapısına güncellendi!
 
     - name: 🛠️ Gerekli Derleyici Araçlarını (Toolchain) Kur
       run: |
@@ -58,7 +58,7 @@ jobs:
         grub-mkrescue -o WindOS-Quantum.iso isodir
 
     - name: 🚀 Derlenen Kusursuz İşletim Sistemini Yükle (Artifact)
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4 # GitHub'ın yeni V4 altyapısına güncellendi!
       with:
         name: WindOS-Quantum-ISO
         path: WindOS-Quantum.iso
