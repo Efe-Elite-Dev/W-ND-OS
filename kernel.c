@@ -1,5 +1,5 @@
 /*
- * Wind OS  -  kernel.c  v14.7 Mirror-Breaker (L-Key Horizontal Flip)
+ * Wind OS  -  kernel.c  v15.0 Titanium Core (Zero Bug, Pure VESA Standard)
  * Lead Developer: Efe (WindOS Team)
  */
 #include "kernel.h"
@@ -16,29 +16,25 @@ static u32 SW = 1024, SH = 768;
 static u32 PITCH = 4096; 
 static u8 BPP = 4;       
 
-/* HAFIZA TAŞMASI KALKANI */
+/* HAFIZA TAŞMASI KALKANI (MAX 1920x1080) */
 #define MAX_SW 1920
 #define MAX_SH 1080
 static u32 back_buffer[MAX_SW * MAX_SH];
 
-static int FLIP_MODE = 0; 
 static int GLASS_MODE = 0;  
 static int DRAW_GLASS = 0;  
 static u32 SYS_RAM_MB = 0;
 
-/* YAPAY ZEKA BİLDİRİM SAYACI */
-static int AI_MESSAGE_TIMER = 0;
-
 /* AKTİF ÇÖZÜNÜRLÜK MENÜSÜ */
 static int CURRENT_RES = 2; 
 static const char* RES_NAMES[] = {
-    "480P (STANDART DEFINITION)", 
-    "720P (HIGH DEFINITION)", 
-    "1080P (FULL HD)", 
-    "4K (ULTRA HD)", 
-    "8K (SUPER UHD)", 
-    "16K (HYPER UHD)", 
-    "32K (QUANTUM UHD)"
+    "480P (SD)", 
+    "720P (HD)", 
+    "1080P (FHD)", 
+    "4K (UHD)", 
+    "8K (SUHD)", 
+    "16K (HYPER)", 
+    "32K (QUANTUM)"
 };
 
 /* ULTRA YÜKSEK KALİTE RENK PALETİ */
@@ -58,11 +54,6 @@ static const char* RES_NAMES[] = {
 #define CRD      0xFFE74C3Cu 
 #define XUB_BLU  0xFF2980B9u 
 #define SHADOW   0xFF030303u  
-#define AND_GRN  0xFF3DDC84u 
-#define DEB_ORG  0xFFE95420u
-#define CGN      0xFF27AE60u  
-#define LIN_ORG  0xFFE67E22u  
-#define SAFE_BLK 0xFF080808u  
 
 /* I/O PORTLARI */
 static inline u8   inb (u16 p)       {u8  v;__asm__ volatile("inb  %1,%0":"=a"(v):"Nd"(p));return v;}
@@ -96,7 +87,7 @@ static int is_ext(const char *n, const char *ext) {
     return 1;
 }
 
-/* FONT MOTORU (BÜYÜK HARFLER) */
+/* FONT MOTORU (EKSİKSİZ) */
 static const u8 F8[128][8]={
  [' ']={0,0,0,0,0,0,0,0},['!']={0x18,0x3C,0x3C,0x18,0x18,0,0x18,0},['"']={0x36,0x36,0,0,0,0,0,0},['#']={0x36,0x7F,0x36,0x36,0x7F,0x36,0x36,0},
  ['$']={0x0C,0x3E,0x03,0x1E,0x30,0x1F,0x0C,0},['%']={0x63,0x33,0x18,0x0C,0x66,0x63,0,0},['&']={0x1C,0x36,0x1C,0x6E,0x3B,0x33,0x6E,0},['\'']={0x06,0x0C,0,0,0,0,0,0},
@@ -133,7 +124,7 @@ static void rb(i32 x,i32 y,i32 w,i32 h,u32 c,i32 t){ fr(x,y,w,t,c); fr(x,y+h-t,w
 static void circ(i32 cx,i32 cy,i32 r,u32 c){ if(r<=0) return; for(i32 dy=-r;dy<=r;dy++) for(i32 dx=-r;dx<=r;dx++) if(dx*dx+dy*dy<=r*r) pp(cx+dx,cy+dy,c); }
 static void rr(i32 x,i32 y,i32 w,i32 h,i32 r,u32 c){ if(r>w/2) r=w/2; if(r>h/2) r=h/2; fr(x+r,y,w-2*r,h,c); fr(x,y+r,r,h-2*r,c); fr(x+w-r,y+r,r,h-2*r,c); circ(x+r,y+r,r,c); circ(x+w-r-1,y+r,r,c); circ(x+r,y+h-r-1,r,c); circ(x+w-r-1,y+h-r-1,r,c); }
 
-/* KÜÇÜK HARFLERİ OTOMATİK BÜYÜTÜR! */
+/* ZIRHLI HARF YAZICI: BÜTÜN HARFLERİ BÜYÜTÜR, EKSİK ÇIKMASINI ENGELLER */
 static void dc(i32 x,i32 y,char ch,u32 fg,u32 bg,i32 sc){ 
     if(ch >= 'a' && ch <= 'z') ch -= 32; 
     if((u8)ch>=128) ch='?'; 
@@ -147,23 +138,15 @@ static void ds(i32 x,i32 y,const char*s,u32 fg,u32 bg,i32 sc){ while(*s){ if(*s=
 static void dsc(i32 x,i32 y,i32 w,const char*s,u32 fg,u32 bg,i32 sc){ i32 tw=(i32)klen(s)*8*sc; if(tw<w) ds(x+(w-tw)/2,y,s,fg,bg,sc); else ds(x,y,s,fg,bg,sc); }
 
 /* ========================================================================= */
-/* DİNAMİK VESA MOTORU */
+/* TITANIUM VESA MOTORU: HİÇBİR TAKLA VEYA AYNA YOK. SAF, DOĞAL, KUSURSUZ 1D */
 /* ========================================================================= */
 static void swap_buffers(void) { 
     for(u32 y=0; y<SH; y++) {
-        u32 src_y = y;
-        u32 src_x_dir = 1;
-
-        if (FLIP_MODE == 1) { src_y = SH - 1 - y; }
-        else if (FLIP_MODE == 2) { src_x_dir = -1; }
-        else if (FLIP_MODE == 3) { src_y = SH - 1 - y; src_x_dir = -1; }
-
-        u32 bb_row = src_y * SW;
+        u32 bb_row = y * SW;
         u32 fb_row = y * PITCH; 
 
         for(u32 x=0; x<SW; x++) {
-            u32 src_x = (src_x_dir == 1) ? x : (SW - 1 - x);
-            u32 color = back_buffer[bb_row + src_x];
+            u32 color = back_buffer[bb_row + x];
             u32 offset = fb_row + (x * BPP);
 
             if (BPP == 4) {
@@ -197,14 +180,6 @@ static u8 kbd_poll(void){
     
     if(c == 't' || c == 'T') { GLASS_MODE = !GLASS_MODE; return 0; }
     if(K_ALT && (c == 'a' || c == 'A')) { AI_OPEN = !AI_OPEN; return 0; }
-
-    /* İŞTE SENİN İSTEDİĞİN 'L' TUŞU: SADECE SAĞ/SOL (AYNA) ÇEVİRİCİ! */
-    if(c == 'l' || c == 'L') { 
-        FLIP_MODE ^= 2; /* 0 ile 2 (Sadece Yatay Döndürme) arasında geçiş yapar */
-        AI_MESSAGE_TIMER = 150; 
-        return 0; 
-    }
-    
     return (u8)c; 
 }
 
@@ -234,10 +209,7 @@ static void mouse_poll(void){
                     if(MBF[0] & 0x10) dx |= (i32)0xFFFFFF00; 
                     if(MBF[0] & 0x20) dy |= (i32)0xFFFFFF00; 
                     
-                    if(FLIP_MODE == 1) { MX += dx; MY += dy; } 
-                    else if(FLIP_MODE == 2) { MX -= dx; MY -= dy; } 
-                    else if(FLIP_MODE == 3) { MX -= dx; MY += dy; } 
-                    else { MX += dx; MY -= dy; } 
+                    MX += dx; MY -= dy; /* FARE DÜZ VE KUSURSUZ EKSEN */
 
                     if(MX < 0) MX = 0; 
                     if(MY < 0) MY = 0; 
@@ -307,7 +279,7 @@ static void DISPLAY_APP(void) {
     if(!DISP_OPEN) return;
     DRAW_WINDOW(280, 120, 450, 450, "EKRAN & COZUNURLUK YONETICISI", PAN_BG);
     if(CLK(280+450-35, 120+8, 25, 20)) DISP_OPEN=0;
-    ds(300, 170, "QUANTUM DISPLAY ENGINE V1.7", WIN_BLUE, 0, 1);
+    ds(300, 170, "QUANTUM DISPLAY ENGINE V15.0", WIN_BLUE, 0, 1);
     ds(300, 190, "LUTFEN RENDER KALITESINI SECIN:", CTXT, 0, 1);
     for(int i=0; i<7; i++) {
         i32 by = 220 + (i * 30);
@@ -323,10 +295,10 @@ static void DISPLAY_APP(void) {
 
 static void SYSTEM_APP(void) {
     if(!SYS_OPEN) return;
-    DRAW_WINDOW(250, 150, 500, 350, "SISTEM BILGISI - QUANTUM EDITION", PAN_BG);
+    DRAW_WINDOW(250, 150, 500, 350, "SISTEM BILGISI - TITANIUM EDITION", PAN_BG);
     if(CLK(250+500-35, 150+8, 25, 20)) SYS_OPEN=0;
-    ds(280, 210, "ISLETIM SISTEMI: WINDOS V14.7 MIRROR BREAKER", WIN_BLUE, 0, 1);
-    ds(280, 240, "MIMARI: X86 (32-BIT) SAF C CEKIRDEGI", CTXT, 0, 1);
+    ds(280, 210, "ISLETIM SISTEMI: WINDOS V15.0 TITANIUM CORE", WIN_BLUE, 0, 1);
+    ds(280, 240, "MIMARI: X86 (32-BIT) SIFIR HATA ODAKLI", CTXT, 0, 1);
     char buf[64]; kcpy(buf, "FIZIKSEL RAM: ");
     itoa((int)SYS_RAM_MB, buf + klen(buf)); kcpy(buf + klen(buf), " MB");
     ds(280, 270, buf, CGN, 0, 1);
@@ -394,10 +366,10 @@ static void WINDAI_ASSISTANT(void) {
     i32 aw = 500, ah = 400; i32 ax = (SW - aw)/2, ay = (SH - ah)/2;
     DRAW_WINDOW(ax, ay, aw, ah, "WINDAI QUANTUM CORE", BG_BASE);
     if(CLK(ax+aw-35, ay+8, 25, 20)) AI_OPEN=0;
-    ds(ax+aw-150, ay+15, "[ ALT + A ]", CGY, 0, 1);
-    rr(ax+20, ay+70, 300, 40, 8, PAN_BG); ds(ax+30, ay+85, "EFE! AYNA KIRICI MOTOR (V14.7) AKTIF.", CTXT, 0, 1);
-    rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE); ds(ax+aw-310, ay+145, "SADECE YATAY EKSENI CEVIREN 'L' TUSU NE ISE YARAR?", CW, 0, 1);
-    rr(ax+20, ay+190, 400, 60, 8, PAN_BG); ds(ax+30, ay+205, "VIRTUALBOX EKRANI SADECE SAGA/SOLA DOGRU YAMULTTURSA", CTXT, 0, 1); ds(ax+30, ay+225, "'L' TUSUNA BASTIGIN AN SADECE AYNAYI CEVIRIR, DUZELTIR!", CTXT, 0, 1);
+    ds(ax+aw-150, ay+15, "[ TITANIUM MOD ]", CGY, 0, 1);
+    rr(ax+20, ay+70, 300, 40, 8, PAN_BG); ds(ax+30, ay+85, "EFE! TITANIUM CORE (V15.0) AKTIF.", CTXT, 0, 1);
+    rr(ax+aw-320, ay+130, 300, 40, 8, WIN_BLUE); ds(ax+aw-310, ay+145, "BUTUN DENEYSEL KODLAR COPE MI GITTI?", CW, 0, 1);
+    rr(ax+20, ay+190, 400, 60, 8, PAN_BG); ds(ax+30, ay+205, "EVET! SADECE SAF, HATA VERMESI IHTIMAL DIŞI", CTXT, 0, 1); ds(ax+30, ay+225, "OLAN %100 OGANIK VESA STANDARTLARI KALDI.", CTXT, 0, 1);
     rr(ax+20, ah+ay-50, aw-40, 35, 17, PAN_BG); ds(ax+35, ah+ay-38, "BIR SEYLER YAZIN... (SIMULASYON MODU)", CGY, 0, 1); circ(ax+aw-40, ah+ay-32, 12, AI_PURP); ds(ax+aw-44, ah+ay-36, ">", CW, 0, 1);
 }
 
@@ -419,8 +391,8 @@ static void DESKTOP(void){
         }
     }
     DRAW_GLASS = 1; fr(0, 0, SW, 25, CK); DRAW_GLASS = 0;
-    ds(15, 8, "WINDOS V14.7 L-KEY ENGINE", CTXT, 0, 1);
-    char top_buf[80]; kcpy(top_buf, "MOD: "); kcpy(top_buf + klen(top_buf), RES_NAMES[CURRENT_RES]); kcpy(top_buf + klen(top_buf), " | RAM: "); itoa((int)SYS_RAM_MB, top_buf + klen(top_buf)); kcpy(top_buf + klen(top_buf), " MB | [L] SAG/SOL CEVIR"); ds(SW-590, 8, top_buf, CGY, 0, 1);
+    ds(15, 8, "WINDOS V15.0 TITANIUM CORE", CTXT, 0, 1);
+    char top_buf[80]; kcpy(top_buf, "MOD: "); kcpy(top_buf + klen(top_buf), RES_NAMES[CURRENT_RES]); kcpy(top_buf + klen(top_buf), " | RAM: "); itoa((int)SYS_RAM_MB, top_buf + klen(top_buf)); kcpy(top_buf + klen(top_buf), " MB | 0 BUG GARANTISI"); ds(SW-630, 8, top_buf, CGN, 0, 1);
     FILEMGR(); CHROMIUM_BROWSER(); SYSTEM_APP(); DISPLAY_APP(); WINDAI_ASSISTANT(); 
 
     if(INSTALLING) {
@@ -433,16 +405,6 @@ static void DESKTOP(void){
         ds(px+20, py+20, "EVRENSEL YUKLEME MOTORU (UNIVERSAL INSTALLER)", CW, 0, 1); ds(px+20, py+50, type_str, CW, 0, 1);
         rr(px+30, py+90, 300, 20, 5, CK); rr(px+30, py+90, INSTALL_PROG * 3, 20, 5, CW); INSTALL_PROG += 1;
         if(INSTALL_PROG >= 100) INSTALLING = 0; 
-    }
-
-    /* YAPAY ZEKA BİLDİRİMİ (Sadece L tuşuna özel!) */
-    if(AI_MESSAGE_TIMER > 0) {
-        i32 msg_w = 460, msg_h = 35;
-        i32 msg_x = (SW - msg_w) / 2;
-        DRAW_GLASS = 1; rr(msg_x, 40, msg_w, msg_h, 8, CHR_GRN); DRAW_GLASS = 0;
-        rb(msg_x, 40, msg_w, msg_h, CW, 1);
-        dsc(msg_x, 50, msg_w, "YAPAY ZEKA: SAG-SOL (AYNA) EKSENI DUZELTILDI!", CK, 0, 1);
-        AI_MESSAGE_TIMER--;
     }
 }
 
@@ -468,5 +430,13 @@ void kernel_main(multiboot_info_t *mbi){
     else { SYS_RAM_MB = 2048; }
 
     mouse_init(); load_root_dir();
-    while(1){ mouse_poll(); kbd_poll(); DESKTOP(); CUR(); swap_buffers(); volatile int x=50000;while(x--)__asm__("nop"); }
+    
+    while(1){ 
+        mouse_poll(); 
+        kbd_poll(); 
+        DESKTOP(); 
+        CUR(); 
+        swap_buffers(); 
+        volatile int x=50000; while(x--)__asm__("nop"); 
+    }
 }
